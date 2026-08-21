@@ -1,0 +1,65 @@
+{% load scheduler_tags %}
+{% load l10n %}
+<div class="results">
+    <table id="result_list">
+        <thead>
+        <tr>
+            <th>
+                <div class='text'><span>Name</span></div>
+            </th>
+            <th>
+                <div class='text'><span>Queues</span></div>
+            </th>
+            <th>
+                <div class='text'><span>State</span></div>
+            </th>
+            <th>
+                <div class='text'><span>Birth</span></div>
+            </th>
+            <th>
+                <div class='text'><span>Hostname</span></div>
+            </th>
+            <th>
+                <div class='text'><span>PID</span></div>
+            </th>
+            <th>
+                <div class='text'><span>Working time</span></div>
+            </th>
+            <th>
+                <div class='text'><span>Successful jobs</span></div>
+            </th>
+            <th>
+                <div class='text'><span>Failed jobs</span></div>
+            </th>
+            <th>
+                <div class='text'><span>Scheduler</span></div>
+            </th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for worker in workers %}
+            <tr class="{% cycle 'row1' 'row2' %}">
+                <td>
+                    <a href='{% url 'worker_details' worker.name %}'>
+                        {{ worker.name }}
+                    </a>
+                </td>
+                <td>
+                    {% for queue_name in worker.queue_names %}
+                        <a href='{% url 'queue_registry_jobs' queue_name 'queued' %}'>{{ queue_name }}</a>
+                        {% if not forloop.last %},{% endif %}
+                    {% endfor %}
+                </td>
+                <td>{{ worker.state.value | capfirst }}</td>
+                <td>{{ worker.birth | date:"Y-m-d, H:i:s" }}</td>
+                <td>{{ worker.hostname }}</td>
+                <td>{{ worker.pid | unlocalize }}</td>
+                <td>{{ worker.total_working_time_ms | default:0 | floatformat }} secs</td>
+                <td>{{ worker.successful_job_count | default:0 }}</td>
+                <td>{{ worker.failed_job_count | default:0 }}</td>
+                <td>{{ worker.has_scheduler }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>

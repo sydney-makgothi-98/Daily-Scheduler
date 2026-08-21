@@ -1,0 +1,120 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Dashboard - Task Scheduler{% endblock %}
+
+{% block nav_queues %}active{% endblock %}
+
+{% block content %}
+<h2 class="section-title">Queue Dashboard</h2>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Total Queued Jobs</div>
+        <div class="stat-value" id="total-queued">
+            <span class="loading"></span>
+        </div>
+        <div class="stat-subtext">Waiting to be processed</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Active Jobs</div>
+        <div class="stat-value" id="total-active">
+            <span class="loading"></span>
+        </div>
+        <div class="stat-subtext">Currently running</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Failed Jobs</div>
+        <div class="stat-value" id="total-failed">
+            <span class="loading"></span>
+        </div>
+        <div class="stat-subtext">Need attention</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Active Workers</div>
+        <div class="stat-value" id="total-workers">
+            <span class="loading"></span>
+        </div>
+        <div class="stat-subtext">Processing jobs</div>
+    </div>
+</div>
+
+<h3 class="section-title light">Queues</h3>
+
+<div class="queue-list" id="queue-list">
+    <div style="text-align: center; padding: 2rem; color: #cbd5e1;">
+        <span class="loading"></span> Loading queue data...
+    </div>
+</div>
+
+<script>
+    async function loadQueueStats() {
+        try {
+            const response = await fetch('{% url "queues_home_json" %}');
+            if (!response.ok) throw new Error('Failed to fetch queue stats');
+
+            const data = await response.json();
+            const queues = data.queues || [];
+
+            let totalQueued = 0;
+            let totalActive = 0;
+            let totalFailed = 0;
+            let totalWorkers = 0;
+
+            queues.forEach(queue => {
+                totalQueued += queue.queued_jobs || 0;
+                totalActive += queue.started_jobs || 0;
+                totalFailed += queue.failed_jobs || 0;
+                totalWorkers += queue.workers || 0;
+            });
+
+            document.getElementById('total-queued').textContent = totalQueued;
+            document.getElementById('total-active').textContent = totalActive;
+            document.getElementById('total-failed').textContent = totalFailed;
+            document.getElementById('total-workers').textContent = totalWorkers;
+
+            const queueListHTML = queues.map(queue => `
+                <div class="queue-card" onclick="window.location.href='{% url "queue_registry_jobs" "QUEUE_NAME" "queued" %}'.replace('QUEUE_NAME', '${queue.name}')">
+                    <div class="queue-name">${queue.name}</div>
+                    <div class="queue-info">
+                        <div class="queue-info-item">
+                            <span class="queue-info-label">Queued</span>
+                            <span class="queue-info-value">${queue.queued_jobs}</span>
+                        </div>
+                        <div class="queue-info-item">
+                            <span class="queue-info-label">Active</span>
+                            <span class="queue-info-value">${queue.started_jobs}</span>
+                        </div>
+                        <div class="queue-info-item">
+                            <span class="queue-info-label">Failed</span>
+                            <span class="queue-info-value">${queue.failed_jobs}</span>
+                        </div>
+                        <div class="queue-info-item">
+                            <span class="queue-info-label">Workers</span>
+                            <span class="queue-info-value">${queue.workers}</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
+                        ${queue.queued_jobs > 0 ? `<span class="status-badge pending">${queue.queued_jobs} Pending</span>` : ''}
+                        ${queue.started_jobs > 0 ? `<span class="status-badge active">${queue.started_jobs} Active</span>` : ''}
+                        ${queue.failed_jobs > 0 ? `<span class="status-badge failed">${queue.failed_jobs} Failed</span>` : ''}
+                    </div>
+                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                        <a href="{% url "queue_registry_jobs" "QUEUE_NAME" "queued" %}".replace('QUEUE_NAME', queue.name) class="btn btn-primary" style="display: inline-block; width: auto;">View Jobs</a>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('queue-list').innerHTML = queueListHTML || '<div class="empty-state"><div class="empty-state-icon">📭</div><p>No queues available</p></div>';
+        } catch (error) {
+            console.error('Error loading queue stats:', error);
+            document.getElementById('queue-list').innerHTML = '<div class="empty-state"><div class="empty-state-icon">❌</div><p>Failed to load queue data</p></div>';
+        }
+    }
+
+    loadQueueStats();
+    setInterval(loadQueueStats, 5000);
+</script>
+{% endblock %}

@@ -1,0 +1,168 @@
+{% extends "admin/scheduler/base.html" %}
+{% load task_filters %}
+
+{% block title %}Calendar - Task Scheduler{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="/" class="btn btn-secondary" style="display: inline-block;">← Back to Dashboard</a>
+</div>
+
+<h2 class="section-title">📅 Monthly Calendar</h2>
+
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <a href="{{ prev_url }}" class="btn btn-secondary">← Previous</a>
+        <h3 style="font-size: 1.5rem; font-weight: 700; color: #a78bfa;">{{ month_name }} {{ year }}</h3>
+        <a href="{{ next_url }}" class="btn btn-secondary">Next →</a>
+    </div>
+
+    <!-- Calendar Grid -->
+    <div style="
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0.5rem;
+        margin-bottom: 2rem;
+    ">
+        <!-- Day headers -->
+        {% for day_name in "MonTueWedThuFriSatSun" %}
+        <div style="
+            text-align: center;
+            padding: 1rem;
+            color: #a78bfa;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.875rem;
+            border-bottom: 2px solid rgba(124, 58, 237, 0.3);
+        ">
+            {{ day_name }}
+        </div>
+        {% endfor %}
+
+        <!-- Calendar days -->
+        {% for week in weeks %}
+            {% for day in week %}
+            <a href="{% url 'task_data_view' day.year day.month day.day %}" style="text-decoration: none;">
+                <div style="
+                    aspect-ratio: 1;
+                    padding: 0.75rem;
+                    border-radius: 12px;
+                    border: 1px solid rgba(124, 58, 237, 0.3);
+                    background: rgba(0, 0, 0, 0.2);
+                    transition: all 0.3s ease;
+                    cursor: pointer;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    {% if day.month != month %}
+                        opacity: 0.3;
+                    {% endif %}
+                    {% if day == today %}
+                        background: linear-gradient(135deg, rgba(124, 58, 237, 0.3) 0%, rgba(236, 72, 153, 0.2) 100%);
+                        border-color: rgba(124, 58, 237, 0.6);
+                    {% endif %}
+                "
+                onmouseover="this.style.transform='translateY(-4px)'; this.style.borderColor='rgba(124, 58, 237, 0.6)';"
+                onmouseout="this.style.transform='translateY(0)'; this.style.borderColor='rgba(124, 58, 237, 0.3)';"
+                >
+                    <div style="
+                        text-align: center;
+                        color: #f8fafc;
+                        font-weight: 600;
+                        font-size: 1.25rem;
+                    ">
+                        {{ day.day }}
+                    </div>
+
+                    {% with count=task_counts|get_item:day %}
+                    {% if count.total > 0 %}
+                    <div style="
+                        display: flex;
+                        flex-direction: column;
+                        gap: 0.25rem;
+                        font-size: 0.75rem;
+                    ">
+                        <div style="color: #cbd5e1;">
+                            📋 {{ count.total }} task{{ count.total|pluralize }}
+                        </div>
+                        <div style="
+                            background: rgba(124, 58, 237, 0.3);
+                            height: 4px;
+                            border-radius: 2px;
+                            overflow: hidden;
+                        ">
+                            <div style="
+                                background: linear-gradient(90deg, #10b981 0%, #10b981 {{ count.percentage }}%, rgba(0,0,0,0.1) {{ count.percentage }}%);
+                                height: 100%;
+                                width: 100%;
+                            "></div>
+                        </div>
+                        <div style="
+                            display: flex;
+                            justify-content: space-between;
+                            color: #a78bfa;
+                            font-size: 0.7rem;
+                        ">
+                            <span>✓ {{ count.completed }}</span>
+                            <span>{{ count.percentage|floatformat:0 }}%</span>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div style="
+                        text-align: center;
+                        color: #cbd5e1;
+                        font-size: 0.75rem;
+                    ">
+                        No tasks
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+            </a>
+            {% endfor %}
+        {% endfor %}
+    </div>
+
+    <!-- Legend -->
+    <div style="
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid rgba(124, 58, 237, 0.3);
+    ">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <div style="width: 12px; height: 12px; background: #10b981; border-radius: 2px;"></div>
+            <span style="font-size: 0.875rem; color: #cbd5e1;">Completed tasks</span>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <div style="width: 12px; height: 12px; background: rgba(0, 0, 0, 0.1); border-radius: 2px;"></div>
+            <span style="font-size: 0.875rem; color: #cbd5e1;">Incomplete tasks</span>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <div style="width: 12px; height: 12px; background: linear-gradient(135deg, rgba(124, 58, 237, 0.3) 0%, rgba(236, 72, 153, 0.2) 100%); border-radius: 2px;"></div>
+            <span style="font-size: 0.875rem; color: #cbd5e1;">Today</span>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .glass-card a {
+        text-decoration: none;
+    }
+</style>
+
+<script>
+function getItem(dict, key) {
+    return dict[key];
+}
+
+// Template filter helper
+document.addEventListener('DOMContentLoaded', function() {
+    // This would be handled by Django template tag
+});
+</script>
+{% endblock %}

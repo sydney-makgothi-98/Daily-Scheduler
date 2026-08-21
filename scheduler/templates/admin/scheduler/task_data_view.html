@@ -1,0 +1,539 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}{{ date_display }} - Task Scheduler{% endblock %}
+
+{% block content %}
+
+<!-- Completion Modal -->
+<div id="completionModal" style="
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    padding: 1rem;
+">
+    <div style="
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(10, 14, 39, 0.95) 100%);
+        border: 1px solid rgba(124, 58, 237, 0.3);
+        border-radius: 16px;
+        padding: 2rem;
+        max-width: 500px;
+        width: 100%;
+        text-align: center;
+        animation: slideUp 0.3s ease;
+    ">
+        <h3 style="
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #f8fafc;
+            margin-bottom: 1.5rem;
+        ">
+            Is this task completed?
+        </h3>
+
+        <p id="modalTaskTitle" style="
+            font-size: 1.125rem;
+            color: #a78bfa;
+            margin-bottom: 2rem;
+            font-weight: 600;
+        "></p>
+
+        <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem;">
+            <!-- Yes Button -->
+            <button id="completeYesBtn" class="btn btn-success" style="
+                font-size: 1.125rem;
+                padding: 0.75rem 2rem;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                transition: all 0.3s ease;
+            ">
+                <span id="yesCheckmark" style="display: inline-block; font-size: 1.5rem;">✓</span>
+                <span id="yesText">Yes</span>
+            </button>
+
+            <!-- No Button -->
+            <button id="completeNoBtn" class="btn btn-danger" style="
+                font-size: 1.125rem;
+                padding: 0.75rem 2rem;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                transition: all 0.3s ease;
+            ">
+                <span id="noX" style="display: inline-block; font-size: 1.5rem;">✕</span>
+                <span id="noText">No</span>
+            </button>
+        </div>
+
+        <button id="closeModalBtn" class="btn btn-secondary" style="width: 100%;">Cancel</button>
+    </div>
+</div>
+
+<style>
+    @keyframes slideUp {
+        from {
+            transform: translateY(20px);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    @keyframes checkmarkAnimation {
+        0% {
+            transform: scale(0) rotate(-45deg);
+            opacity: 0;
+        }
+        50% {
+            transform: scale(1.2) rotate(10deg);
+        }
+        100% {
+            transform: scale(1) rotate(0deg);
+            opacity: 1;
+        }
+    }
+
+    @keyframes xAnimation {
+        0% {
+            transform: scale(0) rotate(-45deg);
+            opacity: 0;
+        }
+        50% {
+            transform: scale(1.2) rotate(10deg);
+        }
+        100% {
+            transform: scale(1) rotate(0deg);
+            opacity: 1;
+        }
+    }
+
+    .btn-success {
+        background: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+        border: 1px solid #10b981;
+    }
+
+    .btn-success:hover {
+        background: rgba(16, 185, 129, 0.3);
+    }
+
+    .btn-danger {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+        border: 1px solid #ef4444;
+    }
+
+    .btn-danger:hover {
+        background: rgba(239, 68, 68, 0.3);
+    }
+
+    .task-completed {
+        background: rgba(16, 185, 129, 0.1) !important;
+        border-color: rgba(16, 185, 129, 0.3) !important;
+    }
+
+    .task-incomplete {
+        background: rgba(239, 68, 68, 0.1) !important;
+        border-color: rgba(239, 68, 68, 0.3) !important;
+    }
+</style>
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'calendar_view' %}" class="btn btn-secondary" style="display: inline-block;">← Back to Calendar</a>
+</div>
+
+<h2 class="section-title">{{ date_display }}</h2>
+
+<!-- Task Summary -->
+<div class="stats-grid" style="margin-bottom: 2rem;">
+    <div class="stat-card">
+        <div class="stat-label">Non-Negotiable</div>
+        <div class="stat-value">{{ task_stats.non_negotiable }}</div>
+        <div class="stat-subtext">Essential tasks</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Secondary</div>
+        <div class="stat-value">{{ task_stats.secondary }}</div>
+        <div class="stat-subtext">Important tasks</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Fun Activities</div>
+        <div class="stat-value">{{ task_stats.fun }}</div>
+        <div class="stat-subtext">Leisure time</div>
+    </div>
+</div>
+
+<!-- Late Task Warning -->
+{% if late_tasks %}
+<div style="
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 2rem;
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+">
+    <div style="font-size: 1.5rem;">⚠️</div>
+    <div>
+        <div style="color: #ef4444; font-weight: 600; margin-bottom: 0.5rem;">Detrimental Hours Warning</div>
+        <div style="color: #cbd5e1; font-size: 0.875rem;">
+            You have {{ late_tasks|length }} task{{ late_tasks|pluralize }} scheduled after 20:00. Consider rescheduling for better sleep.
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Timeline -->
+<div class="glass-card">
+    <h3 class="section-title light" style="margin-bottom: 1.5rem;">📅 Daily Timeline</h3>
+
+    {% if timeline_items %}
+    <div style="position: relative; padding: 1rem 0;">
+        <!-- Vertical timeline line -->
+        <div style="
+            position: absolute;
+            left: 40px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, rgba(124, 58, 237, 0.3) 0%, rgba(124, 58, 237, 0.1) 100%);
+        "></div>
+
+        {% for item in timeline_items %}
+        <div style="display: flex; gap: 2rem; margin-bottom: 1.5rem; position: relative;">
+            <!-- Timeline dot -->
+            <div style="
+                position: relative;
+                min-width: 80px;
+                text-align: center;
+            ">
+                <div style="
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    background: {% if item.type == 'prayer' %}#a78bfa{% elif item.is_completed %}#10b981{% else %}rgba(124, 58, 237, 0.5){% endif %};
+                    border: 3px solid #0f172a;
+                    margin: 0 auto 0.5rem;
+                    box-shadow: 0 0 12px {% if item.type == 'prayer' %}rgba(167, 139, 250, 0.5){% elif item.is_completed %}rgba(16, 185, 129, 0.5){% else %}rgba(124, 58, 237, 0.3){% endif %};
+                "></div>
+                <div style="font-size: 0.875rem; color: #cbd5e1; font-weight: 600;">
+                    {{ item.start_time|time:"H:i" }}
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div style="flex: 1; padding-top: 0.25rem;">
+                <div
+                {% if item.type == 'task' %}
+                    data-task-id="{{ item.id }}"
+                    data-task-title="{{ item.title }}"
+                    class="{% if item.is_completed %}task-completed{% else %}task-incomplete{% endif %}"
+                    onclick="openTaskDetail({{ item.id }})"
+                    style="cursor: pointer; background: {% if item.is_completed %}rgba(16, 185, 129, 0.1){% else %}rgba(0, 0, 0, 0.2){% endif %}; border: 1px solid {% if item.is_completed %}rgba(16, 185, 129, 0.3){% else %}rgba(124, 58, 237, 0.3){% endif %}; border-radius: 8px; padding: 1rem; transition: all 0.3s ease;"
+                    onmouseover="this.style.borderColor='rgba(124, 58, 237, 0.6)'; this.style.background='rgba(0, 0, 0, 0.3)';"
+                    onmouseout="this.style.borderColor='{% if item.is_completed %}rgba(16, 185, 129, 0.3){% else %}rgba(124, 58, 237, 0.3){% endif %}'; this.style.background='{% if item.is_completed %}rgba(16, 185, 129, 0.1){% else %}rgba(0, 0, 0, 0.2){% endif %}';"
+                {% else %}
+                    style="background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(124, 58, 237, 0.3); border-radius: 8px; padding: 1rem; transition: all 0.3s ease;"
+                {% endif %}
+                >
+                    <div style="display: flex; justify-content: space-between; align-items: start; gap: 1rem;">
+                        <div style="flex: 1;">
+                            <div style="
+                                font-size: 1.125rem;
+                                font-weight: 600;
+                                color: #f8fafc;
+                                margin-bottom: 0.5rem;
+                            ">
+                                {{ item.icon }} {% if item.type == 'prayer' %}{{ item.name }}{% else %}{{ item.title }}{% endif %}
+                            </div>
+                            {% if item.description %}
+                            <div style="
+                                font-size: 0.875rem;
+                                color: #cbd5e1;
+                                margin-bottom: 0.5rem;
+                            ">
+                                {{ item.description|truncatechars:100 }}
+                            </div>
+                            {% endif %}
+                            <div style="
+                                display: flex;
+                                gap: 0.5rem;
+                                align-items: center;
+                                font-size: 0.875rem;
+                                color: #cbd5e1;
+                            ">
+                                <span>🕐 {{ item.start_time|time:"H:i" }} - {{ item.end_time|time:"H:i" }}</span>
+                                {% if item.type == 'task' %}
+                                <span class="status-badge {% if item.is_completed %}active{% else %}pending{% endif %}">
+                                    {% if item.is_completed %}✓ Done{% else %}⏳ Pending{% endif %}
+                                </span>
+                                <span class="status-badge info">{{ item.category_display }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📭</div>
+        <p>No tasks scheduled for this day</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Create Task Button -->
+<div style="margin-top: 2rem; text-align: center;">
+    <a href="{% url 'create_personal_task' year=date.year month=date.month day=date.day %}" class="btn btn-primary" style="display: inline-block;">
+        ➕ Create Task
+    </a>
+</div>
+
+<style>
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .status-badge.active {
+        background: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+        border: 1px solid #10b981;
+    }
+
+    .status-badge.pending {
+        background: rgba(245, 158, 11, 0.2);
+        color: #f59e0b;
+        border: 1px solid #f59e0b;
+    }
+
+    .status-badge.info {
+        background: rgba(14, 165, 233, 0.2);
+        color: #0ea5e9;
+        border: 1px solid #0ea5e9;
+    }
+</style>
+
+<script>
+let currentTaskId = null;
+let currentTaskTitle = null;
+
+const modal = document.getElementById('completionModal');
+const modalTaskTitle = document.getElementById('modalTaskTitle');
+const completeYesBtn = document.getElementById('completeYesBtn');
+const completeNoBtn = document.getElementById('completeNoBtn');
+const closeModalBtn = document.getElementById('closeModalBtn');
+const yesCheckmark = document.getElementById('yesCheckmark');
+const noX = document.getElementById('noX');
+
+function openTaskDetail(taskId) {
+    // Find task element and title
+    const taskElements = document.querySelectorAll('[data-task-id]');
+    let taskTitle = 'Task';
+
+    taskElements.forEach(el => {
+        if (parseInt(el.getAttribute('data-task-id')) === taskId) {
+            taskTitle = el.getAttribute('data-task-title') || 'Task';
+        }
+    });
+
+    currentTaskId = taskId;
+    currentTaskTitle = taskTitle;
+    modalTaskTitle.textContent = taskTitle;
+    modal.style.display = 'flex';
+}
+
+function closeModal() {
+    modal.style.display = 'none';
+    currentTaskId = null;
+}
+
+function markTaskComplete(isCompleted) {
+    if (!currentTaskId) return;
+
+    const btn = isCompleted ? completeYesBtn : completeNoBtn;
+    const textSpan = isCompleted ? document.getElementById('yesText') : document.getElementById('noText');
+    const icon = isCompleted ? yesCheckmark : noX;
+
+    // Disable buttons and show loading
+    completeYesBtn.disabled = true;
+    completeNoBtn.disabled = true;
+    btn.style.opacity = '0.7';
+    textSpan.textContent = 'Saving...';
+
+    // Animate button
+    icon.style.animation = isCompleted ? 'checkmarkAnimation 0.6s ease' : 'xAnimation 0.6s ease';
+
+    // Send AJAX request
+    fetch(`/api/tasks/${currentTaskId}/toggle/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            is_completed: isCompleted
+        })
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Update UI
+            updateTaskStatus(currentTaskId, isCompleted);
+
+            // Show success toast
+            window.showToast(
+                `Task marked as ${isCompleted ? 'completed' : 'incomplete'}`,
+                'success',
+                2000
+            );
+
+            // Close modal after animation
+            setTimeout(() => {
+                closeModal();
+            }, 600);
+        } else {
+            throw new Error(data.error || 'Unknown error');
+        }
+    })
+    .catch(error => {
+        console.error('Error marking task complete:', error);
+        console.error('Task ID:', currentTaskId);
+        console.error('Is Completed:', isCompleted);
+        window.showToast('Failed to update task status: ' + error.message, 'error', 4000);
+
+        // Reset buttons
+        completeYesBtn.disabled = false;
+        completeNoBtn.disabled = false;
+        btn.style.opacity = '1';
+        textSpan.textContent = isCompleted ? 'Yes' : 'No';
+        icon.style.animation = 'none';
+    });
+}
+
+function updateTaskStatus(taskId, isCompleted) {
+    const taskElement = document.querySelector(`[data-task-id="${taskId}"]`);
+    if (!taskElement) return;
+
+    // Update background color
+    if (isCompleted) {
+        taskElement.classList.add('task-completed');
+        taskElement.classList.remove('task-incomplete');
+    } else {
+        taskElement.classList.add('task-incomplete');
+        taskElement.classList.remove('task-completed');
+    }
+
+    // Update status badge
+    const statusBadge = taskElement.querySelector('.status-badge.active, .status-badge.pending');
+    if (statusBadge) {
+        if (isCompleted) {
+            statusBadge.textContent = '✓ Done';
+            statusBadge.className = 'status-badge active';
+        } else {
+            statusBadge.textContent = '⏳ Pending';
+            statusBadge.className = 'status-badge pending';
+        }
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Event listeners
+completeYesBtn.addEventListener('click', () => markTaskComplete(true));
+completeNoBtn.addEventListener('click', () => markTaskComplete(false));
+closeModalBtn.addEventListener('click', closeModal);
+
+// Close modal when clicking outside
+modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+        closeModal();
+    }
+});
+
+// Keyboard shortcuts and navigation
+document.addEventListener('keydown', (e) => {
+    if (modal.style.display === 'flex') {
+        // Escape to close
+        if (e.key === 'Escape') {
+            closeModal();
+        }
+        // Y key for Yes
+        else if (e.key === 'y' || e.key === 'Y') {
+            if (!completeYesBtn.disabled) {
+                markTaskComplete(true);
+            }
+        }
+        // N key for No
+        else if (e.key === 'n' || e.key === 'N') {
+            if (!completeNoBtn.disabled) {
+                markTaskComplete(false);
+            }
+        }
+        // Arrow keys for navigation
+        else if (e.key === 'ArrowLeft') {
+            completeYesBtn.focus();
+        }
+        else if (e.key === 'ArrowRight') {
+            completeNoBtn.focus();
+        }
+        else if (e.key === 'Tab') {
+            e.preventDefault();
+            if (document.activeElement === completeNoBtn) {
+                closeModalBtn.focus();
+            } else if (document.activeElement === closeModalBtn) {
+                completeYesBtn.focus();
+            } else {
+                completeNoBtn.focus();
+            }
+        }
+    }
+});
+
+// Add keyboard hints to modal
+document.addEventListener('DOMContentLoaded', function() {
+    const modalContent = modal.querySelector('div[style*="background"]');
+    if (modalContent) {
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size: 0.75rem; color: #94a3b8; margin-top: 1rem; text-align: center;';
+        hint.innerHTML = '<kbd style="background: rgba(0,0,0,0.3); padding: 0.25rem 0.5rem; border-radius: 4px; margin: 0 0.25rem;">Y</kbd> for Yes, <kbd style="background: rgba(0,0,0,0.3); padding: 0.25rem 0.5rem; border-radius: 4px; margin: 0 0.25rem;">N</kbd> for No, <kbd style="background: rgba(0,0,0,0.3); padding: 0.25rem 0.5rem; border-radius: 4px; margin: 0 0.25rem;">ESC</kbd> to cancel';
+        modal.querySelector('button.btn-secondary').insertAdjacentElement('afterend', hint);
+    }
+});
+</script>
+{% endblock %}

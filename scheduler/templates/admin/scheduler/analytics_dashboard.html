@@ -1,0 +1,273 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Analytics - Task Scheduler{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="/" class="btn btn-secondary" style="display: inline-block;">← Back to Dashboard</a>
+</div>
+
+<h2 class="section-title">📊 Productivity Analytics</h2>
+
+<!-- Filters -->
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+        <div>
+            <span style="color: #cbd5e1; margin-right: 1rem;">Filter:</span>
+            <a href="?filter=week" class="btn {% if filter_type == 'week' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">📅 Week</a>
+            <a href="?filter=month" class="btn {% if filter_type == 'month' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">📆 Month</a>
+        </div>
+        <div style="color: #a78bfa; font-weight: 600;">
+            {{ period }}
+        </div>
+    </div>
+</div>
+
+<!-- Alerts -->
+{% if alerts %}
+<div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2rem;">
+    {% for alert in alerts %}
+    <div style="
+        background: {% if alert.type == 'danger' %}rgba(239, 68, 68, 0.1){% else %}rgba(245, 158, 11, 0.1){% endif %};
+        border: 1px solid {% if alert.type == 'danger' %}rgba(239, 68, 68, 0.3){% else %}rgba(245, 158, 11, 0.3){% endif %};
+        border-radius: 8px;
+        padding: 1rem;
+        display: flex;
+        gap: 1rem;
+        align-items: flex-start;
+    ">
+        <div style="font-size: 1.5rem;">{{ alert.icon }}</div>
+        <div>
+            <div style="
+                color: {% if alert.type == 'danger' %}#ef4444{% else %}#f59e0b{% endif %};
+                font-weight: 600;
+                margin-bottom: 0.25rem;
+            ">
+                {{ alert.title }}
+            </div>
+            <div style="color: #cbd5e1; font-size: 0.875rem;">
+                {{ alert.message }}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Statistics Cards -->
+<div class="stats-grid" style="margin-bottom: 2rem;">
+    <!-- Non-Negotiable -->
+    <div class="stat-card">
+        <div class="stat-label">⭐ Non-Negotiable</div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <div>
+                <div class="stat-value" style="font-size: 2rem;">{{ non_negotiable_stats.completed }}/{{ non_negotiable_stats.total }}</div>
+                <div class="stat-subtext">{{ non_negotiable_stats.percentage|floatformat:0 }}% Complete</div>
+            </div>
+            <div style="flex: 1; height: 60px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; overflow: hidden;">
+                <div style="
+                    height: 100%;
+                    width: {{ non_negotiable_stats.percentage }}%;
+                    background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+                    transition: width 0.3s ease;
+                "></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Secondary -->
+    <div class="stat-card">
+        <div class="stat-label">📋 Secondary</div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <div>
+                <div class="stat-value" style="font-size: 2rem;">{{ secondary_stats.completed }}/{{ secondary_stats.total }}</div>
+                <div class="stat-subtext">{{ secondary_stats.percentage|floatformat:0 }}% Complete</div>
+            </div>
+            <div style="flex: 1; height: 60px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; overflow: hidden;">
+                <div style="
+                    height: 100%;
+                    width: {{ secondary_stats.percentage }}%;
+                    background: linear-gradient(90deg, #0ea5e9 0%, #0284c7 100%);
+                    transition: width 0.3s ease;
+                "></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fun -->
+    <div class="stat-card">
+        <div class="stat-label">🎉 Fun Activities</div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <div>
+                <div class="stat-value" style="font-size: 2rem;">{{ fun_stats.completed }}/{{ fun_stats.total }}</div>
+                <div class="stat-subtext">{{ fun_stats.percentage|floatformat:0 }}% Complete</div>
+            </div>
+            <div style="flex: 1; height: 60px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; overflow: hidden;">
+                <div style="
+                    height: 100%;
+                    width: {{ fun_stats.percentage }}%;
+                    background: linear-gradient(90deg, #a78bfa 0%, #9333ea 100%);
+                    transition: width 0.3s ease;
+                "></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart -->
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <h3 class="section-title light" style="margin-bottom: 1.5rem;">📈 Daily Trends</h3>
+    <div style="position: relative; height: 400px;">
+        <canvas id="productivityChart"></canvas>
+    </div>
+</div>
+
+<!-- Daily Breakdown Tables -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+    <!-- Non-Negotiable Table -->
+    <div class="glass-card">
+        <h4 class="section-title light" style="margin-bottom: 1rem; color: #10b981;">⭐ Non-Negotiable Daily</h4>
+        <div class="table-container">
+            <table style="font-size: 0.875rem;">
+                <thead>
+                    <tr>
+                        <th>Day</th>
+                        <th>✓</th>
+                        <th>✕</th>
+                        <th>%</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for day in non_negotiable_daily %}
+                    <tr>
+                        <td>{{ day.day }}</td>
+                        <td style="color: #10b981; font-weight: 600;">{{ day.completed }}</td>
+                        <td style="color: #ef4444; font-weight: 600;">{{ day.incomplete }}</td>
+                        <td style="color: #a78bfa;">{{ day.percentage|floatformat:0 }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Secondary Table -->
+    <div class="glass-card">
+        <h4 class="section-title light" style="margin-bottom: 1rem; color: #0ea5e9;">📋 Secondary Daily</h4>
+        <div class="table-container">
+            <table style="font-size: 0.875rem;">
+                <thead>
+                    <tr>
+                        <th>Day</th>
+                        <th>✓</th>
+                        <th>✕</th>
+                        <th>%</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for day in secondary_daily %}
+                    <tr>
+                        <td>{{ day.day }}</td>
+                        <td style="color: #10b981; font-weight: 600;">{{ day.completed }}</td>
+                        <td style="color: #ef4444; font-weight: 600;">{{ day.incomplete }}</td>
+                        <td style="color: #a78bfa;">{{ day.percentage|floatformat:0 }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Fun Table -->
+    <div class="glass-card">
+        <h4 class="section-title light" style="margin-bottom: 1rem; color: #a78bfa;">🎉 Fun Activities Daily</h4>
+        <div class="table-container">
+            <table style="font-size: 0.875rem;">
+                <thead>
+                    <tr>
+                        <th>Day</th>
+                        <th>✓</th>
+                        <th>✕</th>
+                        <th>%</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for day in fun_daily %}
+                    <tr>
+                        <td>{{ day.day }}</td>
+                        <td style="color: #10b981; font-weight: 600;">{{ day.completed }}</td>
+                        <td style="color: #ef4444; font-weight: 600;">{{ day.incomplete }}</td>
+                        <td style="color: #a78bfa;">{{ day.percentage|floatformat:0 }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js Library -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+// Fetch and render chart
+async function loadChart() {
+    const filter = '{{ filter_type }}';
+    const response = await fetch(`/api/analytics/chart-data/?filter=${filter}&chart_type=line`);
+    const data = await response.json();
+
+    const ctx = document.getElementById('productivityChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.labels,
+            datasets: data.datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        color: '#cbd5e1',
+                        font: { size: 12 },
+                        padding: 15,
+                        usePointStyle: true
+                    }
+                },
+                filler: {
+                    propagate: true
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(124, 58, 237, 0.1)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: '#cbd5e1'
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false,
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: '#cbd5e1'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Load chart when page loads
+document.addEventListener('DOMContentLoaded', loadChart);
+</script>
+
+{% endblock %}

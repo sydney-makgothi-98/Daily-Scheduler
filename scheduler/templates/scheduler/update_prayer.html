@@ -1,0 +1,129 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Edit Prayer Time - Task Scheduler{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'prayer_settings' %}" class="btn btn-secondary" style="display: inline-block;">← Back to Prayer Settings</a>
+</div>
+
+<h2 class="section-title">✏️ Edit Prayer Time</h2>
+
+<div class="glass-card" style="max-width: 600px;">
+    <h3 class="section-title light" style="color: #a78bfa;">{{ prayer.get_prayer_name_display }}</h3>
+
+    <form method="post" style="display: flex; flex-direction: column; gap: 1.5rem;">
+        {% csrf_token %}
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+                <label for="start_time" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                    Start Time
+                </label>
+                <input
+                    type="time"
+                    id="start_time"
+                    name="start_time"
+                    value="{{ prayer.start_time|time:'H:i' }}"
+                    required
+                    style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid rgba(124, 58, 237, 0.3);
+                        border-radius: 8px;
+                        background: rgba(0, 0, 0, 0.2);
+                        color: #f8fafc;
+                        font-size: 1rem;
+                    "
+                />
+            </div>
+            <div>
+                <label for="end_time" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                    End Time
+                </label>
+                <input
+                    type="time"
+                    id="end_time"
+                    name="end_time"
+                    value="{{ prayer.end_time|time:'H:i' }}"
+                    required
+                    style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid rgba(124, 58, 237, 0.3);
+                        border-radius: 8px;
+                        background: rgba(0, 0, 0, 0.2);
+                        color: #f8fafc;
+                        font-size: 1rem;
+                    "
+                />
+            </div>
+        </div>
+
+        <div id="duration" style="
+            background: rgba(124, 58, 237, 0.1);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            padding: 1rem;
+            border-radius: 8px;
+            color: #a78bfa;
+            text-align: center;
+            font-weight: 600;
+        ">
+            Duration: <span id="duration-value">calculating...</span>
+        </div>
+
+        <div style="display: flex; gap: 1rem;">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a href="{% url 'prayer_settings' %}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+    function updateDuration() {
+        const startTime = document.getElementById('start_time').value;
+        const endTime = document.getElementById('end_time').value;
+
+        if (!startTime || !endTime) return;
+
+        const [startH, startM] = startTime.split(':').map(Number);
+        const [endH, endM] = endTime.split(':').map(Number);
+
+        let startMinutes = startH * 60 + startM;
+        let endMinutes = endH * 60 + endM;
+
+        if (endMinutes < startMinutes) {
+            endMinutes += 24 * 60;
+        }
+
+        const durationMinutes = endMinutes - startMinutes;
+        const hours = Math.floor(durationMinutes / 60);
+        const minutes = durationMinutes % 60;
+
+        document.getElementById('duration-value').textContent = `${hours}h ${minutes}m`;
+    }
+
+    document.getElementById('start_time').addEventListener('change', updateDuration);
+    document.getElementById('end_time').addEventListener('change', updateDuration);
+
+    document.querySelector('form').addEventListener('submit', function(e) {
+        const startTime = document.getElementById('start_time').value;
+        const endTime = document.getElementById('end_time').value;
+
+        if (!startTime || !endTime) {
+            e.preventDefault();
+            alert('Please set both start and end times');
+            return;
+        }
+
+        if (startTime >= endTime) {
+            e.preventDefault();
+            alert('End time must be after start time');
+            return;
+        }
+    });
+
+    // Calculate duration on page load
+    updateDuration();
+</script>
+{% endblock %}

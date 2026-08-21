@@ -1,0 +1,118 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Job Details - Task Scheduler{% endblock %}
+
+{% block nav_queues %}active{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'queues_home' %}" class="btn btn-secondary" style="display: inline-block;">← Back to Queues</a>
+</div>
+
+<h2 class="section-title">Job Details</h2>
+
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem;">
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Job Name</div>
+            <div style="font-size: 1rem; color: #f8fafc; word-break: break-all;">{{ job.name }}</div>
+        </div>
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Queue</div>
+            <div style="font-size: 1rem; color: #a78bfa; font-weight: 600;">{{ queue.name }}</div>
+        </div>
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Status</div>
+            <div>
+                {% if job.is_started %}
+                    <span class="status-badge active">Running</span>
+                {% elif job.is_queued %}
+                    <span class="status-badge pending">Queued</span>
+                {% elif job.is_finished %}
+                    <span class="status-badge active">Finished</span>
+                {% elif job.is_failed %}
+                    <span class="status-badge failed">Failed</span>
+                {% else %}
+                    <span class="status-badge info">Unknown</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+    <div class="stat-card">
+        <div class="stat-label">Function</div>
+        <div style="font-family: monospace; color: #a78bfa; word-break: break-all; margin-top: 0.5rem;">
+            {{ job.func_name|default:"N/A" }}
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Created</div>
+        <div style="font-size: 1rem; color: #f8fafc; margin-top: 0.5rem;">
+            {{ job.created_at|date:"Y-m-d H:i:s" }}
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Timeout</div>
+        <div style="font-size: 1rem; color: #f8fafc; margin-top: 0.5rem;">
+            {% if job.timeout %}
+                {{ job.timeout }} seconds
+            {% else %}
+                Default
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if last_result %}
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <h3 class="section-title light">Latest Result</h3>
+    <div style="background: rgba(0, 0, 0, 0.3); padding: 1rem; border-radius: 8px; overflow-x: auto;">
+        <pre style="color: #a78bfa; margin: 0; font-size: 0.875rem;">{{ last_result.result|truncatechars:500 }}</pre>
+    </div>
+</div>
+{% endif %}
+
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <h3 class="section-title light">Job Actions</h3>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        {% if job.is_queued or job.is_scheduled %}
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <a href="{% url 'job_detail_action' job.name 'delete' %}" class="btn btn-danger">Delete Job</a>
+        </form>
+        {% endif %}
+
+        {% if job.is_started %}
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <a href="{% url 'job_detail_action' job.name 'cancel' %}" class="btn btn-danger">Cancel Job</a>
+        </form>
+        {% endif %}
+
+        {% if job.is_finished or job.is_failed %}
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <a href="{% url 'job_detail_action' job.name 'enqueue' %}" class="btn btn-success">Re-enqueue</a>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+{% if job.meta %}
+<div class="glass-card">
+    <h3 class="section-title light">Job Metadata</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+        {% for key, value in job.meta.items %}
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase;">{{ key }}</div>
+            <div style="color: #f8fafc; word-break: break-all;">{{ value }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

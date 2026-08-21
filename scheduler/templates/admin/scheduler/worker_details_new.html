@@ -1,0 +1,160 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Worker Details - Task Scheduler{% endblock %}
+
+{% block nav_workers %}active{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'workers_home' %}" class="btn btn-secondary" style="display: inline-block;">← Back to Workers</a>
+</div>
+
+<h2 class="section-title">Worker: {{ worker.name }}</h2>
+
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem;">
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Worker Name</div>
+            <div style="font-size: 1rem; color: #f8fafc; word-break: break-all;">{{ worker.name }}</div>
+        </div>
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">State</div>
+            <div>
+                {% if worker.state == 'busy' %}
+                    <span class="status-badge active">Busy</span>
+                {% elif worker.state == 'idle' %}
+                    <span class="status-badge pending">Idle</span>
+                {% else %}
+                    <span class="status-badge info">{{ worker.state }}</span>
+                {% endif %}
+            </div>
+        </div>
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Queues</div>
+            <div style="font-size: 1rem; color: #a78bfa;">{{ queue_names }}</div>
+        </div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+    <div class="stat-card">
+        <div class="stat-label">Birth Date</div>
+        <div style="font-size: 1rem; color: #f8fafc; margin-top: 0.5rem;">
+            {{ worker.birth_date|date:"Y-m-d H:i:s" }}
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Successful Jobs</div>
+        <div style="font-size: 1rem; color: #f8fafc; margin-top: 0.5rem;">
+            {{ worker.successful_job_count }}
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Failed Jobs</div>
+        <div style="font-size: 1rem; color: #f8fafc; margin-top: 0.5rem;">
+            {{ worker.failed_job_count }}
+        </div>
+    </div>
+</div>
+
+{% if current_job %}
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <h3 class="section-title light">Currently Processing</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase;">Job Name</div>
+            <a href="{% url 'job_details' current_job.name %}" style="color: #a78bfa; word-break: break-all; text-decoration: none; font-weight: 500;">
+                {{ current_job.name }}
+            </a>
+        </div>
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase;">Function</div>
+            <div style="color: #f8fafc; font-family: monospace;">{{ current_job.func_name }}</div>
+        </div>
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase;">Status</div>
+            <span class="status-badge active">Running</span>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if executions %}
+<div class="glass-card">
+    <h3 class="section-title light">Recent Executions</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Job Name</th>
+                    <th>Function</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for execution in executions %}
+                <tr>
+                    <td>
+                        <a href="{% url 'job_details' execution.name %}" style="color: #a78bfa; text-decoration: none; font-weight: 500;">
+                            {{ execution.name|truncatechars:40 }}
+                        </a>
+                    </td>
+                    <td>
+                        <code style="background: rgba(0, 0, 0, 0.3); padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem;">
+                            {{ execution.func_name|default:"N/A" }}
+                        </code>
+                    </td>
+                    <td>
+                        {% if execution.is_finished %}
+                            <span class="status-badge active">Finished</span>
+                        {% elif execution.is_failed %}
+                            <span class="status-badge failed">Failed</span>
+                        {% else %}
+                            <span class="status-badge pending">Running</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-size: 0.875rem; color: #cbd5e1;">
+                        {{ execution.started_at|date:"Y-m-d H:i" }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if page_range %}
+    <div class="pagination">
+        {% if page_var == "p" %}
+            {% if page_obj.has_previous %}
+                <a href="?p=1">« First</a>
+                <a href="?p={{ page_obj.previous_page_number }}">‹ Previous</a>
+            {% endif %}
+
+            {% for p in page_range %}
+                {% if p == page_obj.number %}
+                    <span class="current">{{ p }}</span>
+                {% else %}
+                    <a href="?p={{ p }}">{{ p }}</a>
+                {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+                <a href="?p={{ page_obj.next_page_number }}">Next ›</a>
+                <a href="?p={{ page_obj.paginator.num_pages }}">Last »</a>
+            {% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="glass-card">
+    <div class="empty-state">
+        <div class="empty-state-icon">📭</div>
+        <p>No recent executions</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

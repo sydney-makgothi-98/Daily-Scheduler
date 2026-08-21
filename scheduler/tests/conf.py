@@ -1,0 +1,108 @@
+# Settings for tests
+import os
+
+from django.conf import settings
+
+import scheduler.settings as scheduler_settings
+from scheduler.settings import conf_settings
+from scheduler.types import Broker
+
+settings.SCHEDULER_QUEUES = {
+    "default": {"HOST": "localhost", "PORT": 6379, "DB": 0},
+    "test": {"HOST": "localhost", "PORT": 1, "DB": 1},
+    "sentinel": {
+        "SENTINELS": [("localhost", 26736), ("localhost", 26737)],
+        "MASTER_NAME": "testmaster",
+        "DB": 1,
+        "USERNAME": "redis-user",
+        "PASSWORD": "secret",
+        # Disable retries when connecting to the (unreachable) sentinel hosts so discovery fails fast (redis-py >= 8).
+        "SENTINEL_KWARGS": {"retry": None},
+    },
+    "test1": {
+        "HOST": "localhost",
+        "PORT": 1,
+        "DB": 1,
+    },
+    "test2": {
+        "HOST": "localhost",
+        "PORT": 1,
+        "DB": 1,
+    },
+    "test3": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 1,
+    },
+    "async": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 1,
+        "ASYNC": False,
+    },
+    "url": {
+        "URL": "redis://username:password@localhost:1234/",
+        "DB": 4,
+    },
+    "url_with_db": {
+        "URL": "redis://username:password@localhost:1234/5",
+    },
+    "url_default_db": {
+        "URL": "redis://username:password@localhost:1234",
+    },
+    "django_tasks_scheduler_test": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 0,
+    },
+    "scheduler_scheduler_active_test": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 0,
+        "ASYNC": False,
+    },
+    "scheduler_scheduler_inactive_test": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 0,
+        "ASYNC": False,
+    },
+    "worker_scheduler_active_test": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 0,
+        "ASYNC": False,
+    },
+    "worker_scheduler_inactive_test": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 0,
+        "ASYNC": False,
+    },
+    "django_tasks_scheduler_test2": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 0,
+    },
+    "test_scheduler": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 0,
+    },
+}
+
+# Several test queues point at intentionally-unreachable brokers (refused ports, fake sentinels) to exercise
+# bad-configuration handling. redis-py >= 8 retries connection errors by default, which turns each failed connect
+# into several seconds of backoff and makes any view that probes every queue (e.g. _find_job) extremely slow.
+# Disable connection retries on the test queues so unreachable brokers fail fast.
+for _queue_settings in settings.SCHEDULER_QUEUES.values():
+    _queue_settings.setdefault("CONNECTION_KWARGS", {}).setdefault("retry", None)
+
+conf_settings()
+
+if os.getenv("FAKEREDIS", "False") == "True":  # pragma: no cover
+    # BROKER is a SchedulerConfiguration setting, not a per-queue one. Mutate the live config object in place (the
+    # same instance the connection helpers imported by reference) so every queue uses fakeredis instead of a real
+    # Redis. Reassigning settings.SCHEDULER_CONFIG would not work here: conf_settings() rebinds the module global to
+    # a new object, leaving already-imported references pointing at the old one.
+    scheduler_settings.SCHEDULER_CONFIG.BROKER = Broker.FAKEREDIS

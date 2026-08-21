@@ -1,0 +1,86 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Confirm Action - Task Scheduler{% endblock %}
+
+{% block nav_queues %}active{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="{{ next_url }}" class="btn btn-secondary" style="display: inline-block;">← Back</a>
+</div>
+
+<h2 class="section-title">Confirm Batch Action</h2>
+
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Action</div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: #a78bfa;">{{ action|upper }}</div>
+        </div>
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Total Jobs</div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: #a78bfa;">{{ total_jobs }}</div>
+        </div>
+        {% if queue %}
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Queue</div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: #a78bfa;">{{ queue.name }}</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if jobs %}
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <h3 class="section-title light">Jobs to be affected</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Job Name</th>
+                    <th>Function</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr>
+                    <td>
+                        <a href="{% url 'job_details' job.name %}" style="color: #a78bfa; text-decoration: none; font-weight: 500;">
+                            {{ job.name|truncatechars:40 }}
+                        </a>
+                    </td>
+                    <td>
+                        <code style="background: rgba(0, 0, 0, 0.3); padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem;">
+                            {{ job.func_name|default:"N/A" }}
+                        </code>
+                    </td>
+                    <td style="font-size: 0.875rem; color: #cbd5e1;">
+                        {{ job.created_at|date:"Y-m-d H:i" }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="glass-card" style="margin-bottom: 2rem; max-width: 600px;">
+    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem;">
+        {% if action == 'empty' or action == 'delete' %}
+            <p style="color: #f8fafc; margin-bottom: 0.5rem;">⚠️ Are you sure you want to <strong>{{ action|upper }}</strong> {{ total_jobs }} job(s)? This action cannot be undone.</p>
+        {% elif action == 'requeue' %}
+            <p style="color: #f8fafc; margin-bottom: 0.5rem;">⚠️ This will re-queue {{ total_jobs }} job(s) to run again.</p>
+        {% elif action == 'stop' %}
+            <p style="color: #f8fafc; margin-bottom: 0.5rem;">⚠️ This will stop {{ total_jobs }} job(s) immediately.</p>
+        {% endif %}
+    </div>
+
+    <form method="post" action="{{ action_url }}" style="display: flex; gap: 1rem;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Confirm {{ action|upper }}</button>
+        <a href="{{ next_url }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

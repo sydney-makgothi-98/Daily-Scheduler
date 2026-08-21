@@ -1,0 +1,335 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}{% if is_edit %}Edit{% else %}Create{% endif %} Task - Task Scheduler{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'task_data_view' date.year date.month date.day %}" class="btn btn-secondary" style="display: inline-block;">← Back to {{ date_display }}</a>
+</div>
+
+<h2 class="section-title">{% if is_edit %}✏️ Edit Task{% else %}➕ Create Task{% endif %}</h2>
+
+<div class="glass-card" style="max-width: 700px; margin-bottom: 2rem;">
+    <p style="color: #cbd5e1; margin-bottom: 1.5rem;">
+        {% if is_edit %}
+        Update your task details below.
+        {% else %}
+        Add a new task for <strong style="color: #a78bfa;">{{ date_display }}</strong>
+        {% endif %}
+    </p>
+
+    <form method="post" style="display: flex; flex-direction: column; gap: 1.5rem;" id="taskForm">
+        {% csrf_token %}
+
+        <!-- Task Title -->
+        <div>
+            <label for="{{ form.title.id_for_label }}" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                📝 Task Title * <span style="color: #94a3b8; font-weight: 400;">(required)</span>
+            </label>
+            {% if form.title.errors %}
+                <ul class="error-messages" style="color: #ef4444; margin-bottom: 0.5rem; list-style: none;">
+                    {% for error in form.title.errors %}<li>{{ error }}</li>{% endfor %}
+                </ul>
+            {% endif %}
+            {{ form.title }}
+            <style>
+                #{{ form.title.id_for_label }} {
+                    width: 100%;
+                    padding: 0.75rem;
+                    border: 1px solid rgba(124, 58, 237, 0.3);
+                    border-radius: 8px;
+                    background: rgba(0, 0, 0, 0.2);
+                    color: #f8fafc;
+                    font-size: 1rem;
+                    transition: all 0.3s ease;
+                }
+                #{{ form.title.id_for_label }}:focus {
+                    outline: none;
+                    border-color: rgba(124, 58, 237, 0.6);
+                    background: rgba(0, 0, 0, 0.3);
+                }
+            </style>
+        </div>
+
+        <!-- Description -->
+        <div>
+            <label for="{{ form.description.id_for_label }}" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                📄 Description (Optional)
+            </label>
+            {% if form.description.errors %}
+                <ul class="error-messages" style="color: #ef4444; margin-bottom: 0.5rem; list-style: none;">
+                    {% for error in form.description.errors %}<li>{{ error }}</li>{% endfor %}
+                </ul>
+            {% endif %}
+            {{ form.description }}
+            <style>
+                #{{ form.description.id_for_label }} {
+                    width: 100%;
+                    padding: 0.75rem;
+                    border: 1px solid rgba(124, 58, 237, 0.3);
+                    border-radius: 8px;
+                    background: rgba(0, 0, 0, 0.2);
+                    color: #f8fafc;
+                    font-size: 1rem;
+                    font-family: inherit;
+                    resize: vertical;
+                    transition: all 0.3s ease;
+                }
+                #{{ form.description.id_for_label }}:focus {
+                    outline: none;
+                    border-color: rgba(124, 58, 237, 0.6);
+                    background: rgba(0, 0, 0, 0.3);
+                }
+            </style>
+        </div>
+
+        <!-- Date -->
+        <div>
+            <label for="{{ form.date.id_for_label }}" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                📅 Date *
+            </label>
+            {% if form.date.errors %}
+                <ul class="error-messages" style="color: #ef4444; margin-bottom: 0.5rem; list-style: none;">
+                    {% for error in form.date.errors %}<li>{{ error }}</li>{% endfor %}
+                </ul>
+            {% endif %}
+            {{ form.date }}
+            <style>
+                #{{ form.date.id_for_label }} {
+                    width: 100%;
+                    padding: 0.75rem;
+                    border: 1px solid rgba(124, 58, 237, 0.3);
+                    border-radius: 8px;
+                    background: rgba(0, 0, 0, 0.2);
+                    color: #f8fafc;
+                    font-size: 1rem;
+                    transition: all 0.3s ease;
+                }
+                #{{ form.date.id_for_label }}:focus {
+                    outline: none;
+                    border-color: rgba(124, 58, 237, 0.6);
+                    background: rgba(0, 0, 0, 0.3);
+                }
+            </style>
+        </div>
+
+        <!-- Time Section -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <!-- Start Time -->
+            <div>
+                <label for="{{ form.start_time.id_for_label }}" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                    🕐 Start Time *
+                </label>
+                {% if form.start_time.errors %}
+                    <ul class="error-messages" style="color: #ef4444; margin-bottom: 0.5rem; list-style: none; font-size: 0.875rem;">
+                        {% for error in form.start_time.errors %}<li>{{ error }}</li>{% endfor %}
+                    </ul>
+                {% endif %}
+                {{ form.start_time }}
+                <style>
+                    #{{ form.start_time.id_for_label }} {
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid rgba(124, 58, 237, 0.3);
+                        border-radius: 8px;
+                        background: rgba(0, 0, 0, 0.2);
+                        color: #f8fafc;
+                        font-size: 1rem;
+                        transition: all 0.3s ease;
+                    }
+                    #{{ form.start_time.id_for_label }}:focus {
+                        outline: none;
+                        border-color: rgba(124, 58, 237, 0.6);
+                        background: rgba(0, 0, 0, 0.3);
+                    }
+                </style>
+            </div>
+
+            <!-- End Time -->
+            <div>
+                <label for="{{ form.end_time.id_for_label }}" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                    🕐 End Time *
+                </label>
+                {% if form.end_time.errors %}
+                    <ul class="error-messages" style="color: #ef4444; margin-bottom: 0.5rem; list-style: none; font-size: 0.875rem;">
+                        {% for error in form.end_time.errors %}<li>{{ error }}</li>{% endfor %}
+                    </ul>
+                {% endif %}
+                {{ form.end_time }}
+                <style>
+                    #{{ form.end_time.id_for_label }} {
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid rgba(124, 58, 237, 0.3);
+                        border-radius: 8px;
+                        background: rgba(0, 0, 0, 0.2);
+                        color: #f8fafc;
+                        font-size: 1rem;
+                        transition: all 0.3s ease;
+                    }
+                    #{{ form.end_time.id_for_label }}:focus {
+                        outline: none;
+                        border-color: rgba(124, 58, 237, 0.6);
+                        background: rgba(0, 0, 0, 0.3);
+                    }
+                </style>
+            </div>
+        </div>
+
+        <!-- Category -->
+        <div>
+            <label for="{{ form.category.id_for_label }}" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                ⭐ Task Category *
+            </label>
+            <p style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem;">
+                <strong>⭐ Non-Negotiable:</strong> Essential tasks (minimum 3 per day)<br>
+                <strong>📋 Secondary:</strong> Important but flexible<br>
+                <strong>🎉 Fun:</strong> Leisure activities
+            </p>
+            {% if form.category.errors %}
+                <ul class="error-messages" style="color: #ef4444; margin-bottom: 0.5rem; list-style: none;">
+                    {% for error in form.category.errors %}<li>{{ error }}</li>{% endfor %}
+                </ul>
+            {% endif %}
+            {{ form.category }}
+            <style>
+                #{{ form.category.id_for_label }} {
+                    width: 100%;
+                    padding: 0.75rem;
+                    border: 1px solid rgba(124, 58, 237, 0.3);
+                    border-radius: 8px;
+                    background: rgba(0, 0, 0, 0.2);
+                    color: #f8fafc;
+                    font-size: 1rem;
+                    transition: all 0.3s ease;
+                    cursor: pointer;
+                }
+                #{{ form.category.id_for_label }}:focus {
+                    outline: none;
+                    border-color: rgba(124, 58, 237, 0.6);
+                    background: rgba(0, 0, 0, 0.3);
+                }
+            </style>
+        </div>
+
+        <!-- Non-field Errors -->
+        {% if form.non_field_errors %}
+            <div style="
+                background: rgba(239, 68, 68, 0.1);
+                border: 1px solid rgba(239, 68, 68, 0.3);
+                border-radius: 8px;
+                padding: 1rem;
+                color: #ef4444;
+            ">
+                {% for error in form.non_field_errors %}
+                    <p>{{ error }}</p>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <!-- Buttons -->
+        <div style="display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;" class="action-buttons">
+            <button type="submit" class="btn btn-primary" id="submitBtn" title="Click to save or press Ctrl+S">
+                {% if is_edit %}💾 Save Changes{% else %}➕ Create Task{% endif %}
+            </button>
+            <a href="{% url 'task_data_view' date.year date.month date.day %}" class="btn btn-secondary" title="Return to day view (press Escape)">Cancel</a>
+            {% if is_edit %}
+            <form method="post" action="{% url 'delete_personal_task' task.id %}" style="display: inline;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger" onclick="return confirm('Delete this task?');" title="Permanently delete this task">🗑️ Delete</button>
+            </form>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('taskForm');
+    const titleInput = document.getElementById('id_title');
+    const startTimeInput = document.getElementById('id_start_time');
+    const endTimeInput = document.getElementById('id_end_time');
+    const categoryInput = document.getElementById('id_category');
+
+    // Focus first input on page load
+    if (titleInput) {
+        setTimeout(() => titleInput.focus(), 100);
+    }
+
+    // Keyboard shortcut: Ctrl+S to submit
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            form.submit();
+        }
+    });
+
+    // Keyboard shortcut: Escape to cancel
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const cancelBtn = document.querySelector('a.btn-secondary');
+            if (cancelBtn) {
+                window.location.href = cancelBtn.href;
+            }
+        }
+    });
+
+    // Real-time validation: time fields
+    if (startTimeInput && endTimeInput) {
+        function validateTimes() {
+            const startTime = startTimeInput.value;
+            const endTime = endTimeInput.value;
+
+            if (startTime && endTime && startTime >= endTime) {
+                endTimeInput.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+                endTimeInput.title = 'End time must be after start time';
+            } else {
+                endTimeInput.style.borderColor = 'rgba(124, 58, 237, 0.3)';
+                endTimeInput.title = '';
+            }
+        }
+
+        startTimeInput.addEventListener('change', validateTimes);
+        endTimeInput.addEventListener('change', validateTimes);
+    }
+
+    // Real-time validation: title required
+    if (titleInput) {
+        titleInput.addEventListener('blur', function() {
+            if (!this.value.trim()) {
+                this.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+            } else {
+                this.style.borderColor = 'rgba(124, 58, 237, 0.3)';
+            }
+        });
+    }
+
+    // Category change feedback
+    if (categoryInput) {
+        categoryInput.addEventListener('change', function() {
+            const categoryLabels = {
+                'NON_NEGOTIABLE': '⭐ Essential (3/day minimum)',
+                'SECONDARY': '📋 Important but flexible',
+                'FUN': '🎉 Enjoy yourself!'
+            };
+            const selected = this.value;
+            if (categoryLabels[selected]) {
+                window.showToast(categoryLabels[selected], 'info', 1500);
+            }
+        });
+    }
+});
+</script>
+
+<!-- Info Box -->
+<div class="glass-card" style="max-width: 700px;">
+    <h3 class="section-title light" style="margin-bottom: 1rem;">💡 Tips</h3>
+    <ul style="color: #cbd5e1; line-height: 1.8;">
+        <li>✅ Be specific with task titles so you remember exactly what to do</li>
+        <li>✅ Set realistic time blocks for each task</li>
+        <li>✅ Aim for at least 3 non-negotiable tasks daily</li>
+        <li>✅ Avoid scheduling tasks after 20:00 for better sleep</li>
+        <li>✅ You can always edit tasks later if plans change</li>
+    </ul>
+</div>
+{% endblock %}

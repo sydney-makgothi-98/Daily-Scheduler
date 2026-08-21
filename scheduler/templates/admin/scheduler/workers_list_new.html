@@ -1,0 +1,73 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Workers - Task Scheduler{% endblock %}
+
+{% block nav_workers %}active{% endblock %}
+
+{% block content %}
+<h2 class="section-title">Active Workers</h2>
+
+{% if workers %}
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Total Workers</div>
+            <div style="font-size: 2.5rem; font-weight: 700; color: #a78bfa;">{{ workers|length }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="queue-list">
+    {% for worker in workers %}
+    <div class="queue-card" onclick="window.location.href='{% url 'worker_details' worker.name %}'">
+        <div class="queue-name">{{ worker.name }}</div>
+        <div class="queue-info">
+            <div class="queue-info-item">
+                <span class="queue-info-label">State</span>
+                <span class="queue-info-value">
+                    {% if worker.state == 'busy' %}
+                    <span class="status-badge active">Busy</span>
+                    {% elif worker.state == 'idle' %}
+                    <span class="status-badge pending">Idle</span>
+                    {% else %}
+                    <span class="status-badge info">{{ worker.state }}</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div class="queue-info-item">
+                <span class="queue-info-label">Birth Date</span>
+                <span style="color: #f8fafc;">{{ worker.birth_date|date:"Y-m-d H:i" }}</span>
+            </div>
+            <div class="queue-info-item">
+                <span class="queue-info-label">Queues</span>
+                <span style="color: #f8fafc;">{{ worker.queue_names|join:", " }}</span>
+            </div>
+            <div class="queue-info-item">
+                <span class="queue-info-label">Current Job</span>
+                <span style="color: #f8fafc;">
+                    {% if worker.current_job_name %}
+                        <a href="{% url 'job_details' worker.current_job_name %}" style="color: #a78bfa;">
+                            {{ worker.current_job_name|truncatechars:30 }}
+                        </a>
+                    {% else %}
+                        <span style="opacity: 0.5;">None</span>
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+        <div style="margin-top: 1rem;">
+            <a href="{% url 'worker_details' worker.name %}" class="btn btn-primary" style="display: inline-block; width: auto;">View Details</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="glass-card">
+    <div class="empty-state">
+        <div class="empty-state-icon">🔌</div>
+        <p>No active workers found</p>
+        <p style="font-size: 0.875rem; margin-top: 0.5rem;">Start a worker to begin processing jobs</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

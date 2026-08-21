@@ -1,0 +1,116 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Add Prayer Time - Task Scheduler{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'prayer_settings' %}" class="btn btn-secondary" style="display: inline-block;">← Back to Prayer Settings</a>
+</div>
+
+<h2 class="section-title">➕ Add Prayer Time</h2>
+
+<div class="glass-card" style="max-width: 600px;">
+    <form method="post" style="display: flex; flex-direction: column; gap: 1.5rem;">
+        {% csrf_token %}
+
+        <div>
+            <label for="prayer_name" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                Prayer
+            </label>
+            <select
+                id="prayer_name"
+                name="prayer_name"
+                required
+                style="
+                    width: 100%;
+                    padding: 0.75rem;
+                    border: 1px solid rgba(124, 58, 237, 0.3);
+                    border-radius: 8px;
+                    background: rgba(0, 0, 0, 0.2);
+                    color: #f8fafc;
+                    font-size: 1rem;
+                "
+            >
+                <option value="" selected>Select a prayer...</option>
+                {% for value, label in prayer_choices %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+                <label for="start_time" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                    Start Time
+                </label>
+                <input
+                    type="time"
+                    id="start_time"
+                    name="start_time"
+                    required
+                    style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid rgba(124, 58, 237, 0.3);
+                        border-radius: 8px;
+                        background: rgba(0, 0, 0, 0.2);
+                        color: #f8fafc;
+                        font-size: 1rem;
+                    "
+                />
+            </div>
+            <div>
+                <label for="end_time" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                    End Time
+                </label>
+                <input
+                    type="time"
+                    id="end_time"
+                    name="end_time"
+                    required
+                    style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid rgba(124, 58, 237, 0.3);
+                        border-radius: 8px;
+                        background: rgba(0, 0, 0, 0.2);
+                        color: #f8fafc;
+                        font-size: 1rem;
+                    "
+                />
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 1rem;">
+            <button type="submit" class="btn btn-primary">Create Prayer Time</button>
+            <a href="{% url 'prayer_settings' %}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+    document.querySelector('form').addEventListener('submit', function(e) {
+        const startTime = document.getElementById('start_time').value;
+        const endTime = document.getElementById('end_time').value;
+        const prayerName = document.getElementById('prayer_name').value;
+
+        if (!prayerName) {
+            e.preventDefault();
+            alert('Please select a prayer');
+            return;
+        }
+
+        if (!startTime || !endTime) {
+            e.preventDefault();
+            alert('Please set both start and end times');
+            return;
+        }
+
+        if (startTime >= endTime) {
+            e.preventDefault();
+            alert('End time must be after start time');
+            return;
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,150 @@
+name: Django CI
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  test-regular:
+    runs-on: ubuntu-latest
+    name: "Tests py${{ matrix.python-version }}/dj${{ matrix.django-version }}/${{ matrix.broker }}"
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+      UV_LOCKED: 1
+      PYTHONUNBUFFERED: 1
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.14t"]
+        django-version: ["5.2.*", "6.0.*"]
+        broker: ["redis", "fakeredis", "valkey"]
+        exclude:
+          - python-version: "3.11"
+            django-version: "6.0.*"
+        include:
+          - python-version: "3.14t"
+            django-version: "5.2.*"
+            broker: "redis"
+            coverage: yes
+          - python-version: "3.14t"
+            django-version: "6.0.*"
+            broker: "redis"
+            coverage: yes
+    permissions:
+      pull-requests: write
+    services:
+      redis:
+        image: redis:8.8.0
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      valkey:
+        image: valkey/valkey:9.1.0
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    outputs:
+      version: ${{ steps.getVersion.outputs.VERSION }}
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "0.11.21"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          cache-dependency-path: uv.lock
+          python-version: "${{ matrix.python-version }}"
+          allow-prereleases: true
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [ ${{ matrix.broker == 'valkey' }} == true ]; then
+            additional_args="--extra valkey"
+          fi
+          uv sync --extra yaml $additional_args
+
+      - name: Get version
+        id: getVersion
+        shell: bash
+        run: |
+          VERSION=$(uv version --short)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check for missing migrations
+        env:
+          UV_WORKING_DIR: testproject/
+        run: |
+          uv pip install -U "django==${{ matrix.django-version }}"
+          uv run --no-sync manage.py makemigrations --check
+
+      - name: Run Tests without coverage
+        env:
+          UV_WORKING_DIR: testproject/
+        if: ${{ matrix.coverage != 'yes' }}
+        run: |
+          export FAKEREDIS=${{ matrix.broker == 'fakeredis' }}
+          if [ ${{ matrix.broker == 'valkey' }} == true ]; then
+            export BROKER_PORT=6380
+          else
+            export BROKER_PORT=6379
+          fi
+          uv pip install -U "django==${{ matrix.django-version }}"
+          uv run --no-sync manage.py test --exclude-tag multiprocess scheduler
+
+      # Steps for coverage check
+      - name: Run tests with coverage
+        uses: ./.github/actions/test-coverage
+        if: ${{ matrix.coverage == 'yes' }}
+        with:
+          pythonVer: ${{ matrix.python-version }}
+          djangoVer: ${{ matrix.django-version }}
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create coverage badge
+        if: ${{ matrix.coverage == 'yes' && github.event_name == 'push' }}
+        uses: schneegans/dynamic-badges-action@0e50b8bad39e7e1afd3e4e9c2b7dd145fad07501
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: b756396efb895f0e34558c980f1ca0c7
+          filename: django-tasks-scheduler-4.json
+          label: coverage
+          message: ${{ env.COVERAGE }}%
+          color: green
+
+  # Prepare a draft release for the GitHub Releases page for manual verification
+  # If accepted and published, the release workflow would be triggered
+  update_release_draft:
+    permissions:
+      contents: write # write permission is required to create a GitHub release
+      pull-requests: write # write permission is required for auto-labeler otherwise, read permission is required at least
+    needs: test-regular
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@ed4bc48ec97379be2258e7b7ac2624a3e26ab809
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

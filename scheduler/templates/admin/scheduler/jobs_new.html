@@ -1,0 +1,105 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Jobs - {{ job_status }} - Task Scheduler{% endblock %}
+
+{% block nav_queues %}active{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'queues_home' %}" class="btn btn-secondary" style="display: inline-block;">← Back to Queues</a>
+</div>
+
+<h2 class="section-title">{{ job_status }} Jobs in Queue: {{ queue.name }}</h2>
+
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem;">Total Jobs</div>
+            <div style="font-size: 2rem; font-weight: 700; color: #a78bfa;">{{ num_jobs }}</div>
+        </div>
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem;">Status</div>
+            <div style="font-size: 1rem; color: #a78bfa; font-weight: 600;">{{ registry_name|upper }}</div>
+        </div>
+    </div>
+</div>
+
+{% if jobs %}
+<div class="glass-card">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Job Name</th>
+                    <th>Function</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr>
+                    <td>
+                        <a href="{% url 'job_details' job.name %}" style="color: #a78bfa; text-decoration: none; font-weight: 500;">
+                            {{ job.name|truncatechars:40 }}
+                        </a>
+                    </td>
+                    <td>
+                        <code style="background: rgba(0, 0, 0, 0.3); padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem;">
+                            {{ job.func_name|default:"N/A" }}
+                        </code>
+                    </td>
+                    <td>
+                        <span class="status-badge {% if registry_name == 'started' %}active{% elif registry_name == 'failed' %}failed{% elif registry_name == 'finished' %}active{% else %}pending{% endif %}">
+                            {{ registry_name }}
+                        </span>
+                    </td>
+                    <td style="font-size: 0.875rem; color: #cbd5e1;">
+                        {{ job.created_at|date:"Y-m-d H:i" }}
+                    </td>
+                    <td>
+                        <div class="action-buttons">
+                            <a href="{% url 'job_details' job.name %}" class="btn btn-primary">View</a>
+                            {% if registry_name == 'queued' or registry_name == 'scheduled' %}
+                            <a href="{% url 'job_detail_action' job.name 'delete' %}" class="btn btn-danger">Delete</a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if page_range %}
+    <div class="pagination">
+        {% if page > 1 %}
+            <a href="?page=1">« First</a>
+            <a href="?page={{ page|add:'-1' }}">‹ Previous</a>
+        {% endif %}
+
+        {% for p in page_range %}
+            {% if p == page %}
+                <span class="current">{{ p }}</span>
+            {% else %}
+                <a href="?page={{ p }}">{{ p }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if page < page_range|length %}
+            <a href="?page={{ page|add:'1' }}">Next ›</a>
+            <a href="?page={{ page_range|length }}">Last »</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="glass-card">
+    <div class="empty-state">
+        <div class="empty-state-icon">📭</div>
+        <p>No {{ registry_name }} jobs found</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

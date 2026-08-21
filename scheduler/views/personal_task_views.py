@@ -1,0 +1,268 @@
+from datetime import datetime, timedelta, time
+from django.http import JsonResponse
+from django.shortcuts import render, redirect, get_object_or_404
+from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib import messages
+from django.utils import timezone
+import json
+
+from scheduler.models import PersonalTask, PrayerSchedule, TaskCategory, TaskCompletion
+from scheduler.forms import PersonalTaskForm
+
+
+def calendar_view(request):
+    """Display monthly calendar with task indicators"""
+    today = timezone.now().date()
+    year = int(request.GET.get("year", today.year))
+    month = int(request.GET.get("month", today.month))
+
+    # Get first day of month and calculate calendar grid
+    first_day = datetime(year, month, 1).date()
+    start_of_week = first_day - timedelta(days=first_day.weekday())
+
+    # Generate calendar grid (6 weeks)
+    calendar_days = []
+    current_date = start_of_week
+    while len(calendar_days) < 42:
+        calendar_days.append(current_date)
+        current_date += timedelta(days=1)
+
+    # Get task counts for each day
+    task_counts = {}
+    for day in calendar_days:
+        tasks = PersonalTask.objects.filter(date=day)
+        completed = tasks.filter(is_completed=True).count()
+        total = tasks.count()
+        task_counts[day] = {
+            "total": total,
+            "completed": completed,
+            "percentage": (completed / total * 100) if total > 0 else 0,
+        }
+
+    # Group days into weeks
+    weeks = []
+    for i in range(0, len(calendar_days), 7):
+        weeks.append(calendar_days[i : i + 7])
+
+    # Navigation
+    if month == 1:
+        prev_month = 12
+        prev_year = year - 1
+    else:
+        prev_month = month - 1
+        prev_year = year
+
+    if month == 12:
+        next_month = 1
+        next_year = year + 1
+    else:
+        next_month = month + 1
+        next_year = year
+
+    context = {
+        "year": year,
+        "month": month,
+        "month_name": datetime(year, month, 1).strftime("%B"),
+        "weeks": weeks,
+        "task_counts": task_counts,
+        "today": today,
+        "prev_url": f"?year={prev_year}&month={prev_month}",
+        "next_url": f"?year={next_year}&month={next_month}",
+    }
+
+    return render(request, "admin/scheduler/calendar_view.html", context)
+
+
+def task_data_view(request, year, month, day):
+    """Display tasks for a specific date with timeline"""
+    try:
+        date = datetime(year, month, day).date()
+    except ValueError:
+        messages.error(request, "Invalid date")
+        return redirect("calendar_view")
+
+    # Get all tasks for this date
+    tasks = PersonalTask.objects.filter(date=date).order_by("start_time")
+
+    # Get prayer times
+    prayers = PrayerSchedule.objects.all().order_by("start_time")
+
+    # Create timeline items (tasks + prayers)
+    timeline_items = []
+
+    # Add prayers
+    for prayer in prayers:
+        timeline_items.append({
+            "type": "prayer",
+            "name": prayer.get_prayer_name_display(),
+            "prayer_name": prayer.prayer_name,
+            "start_time": prayer.start_time,
+            "end_time": prayer.end_time,
+            "icon": "🕌",
+        })
+
+    # Add tasks
+    for task in tasks:
+        timeline_items.append({
+            "type": "task",
+            "id": task.id,
+            "title": task.title,
+            "description": task.description,
+            "start_time": task.start_time,
+            "end_time": task.end_time,
+            "category": task.category,
+            "category_display": task.get_category_display(),
+            "is_completed": task.is_completed,
+            "icon": get_category_icon(task.category),
+        })
+
+    # Sort by start time
+    timeline_items.sort(key=lambda x: x["start_time"])
+
+    # Check for late tasks (past 20:00)
+    late_tasks = [item for item in timeline_items if item.get("start_time", time()) >= time(20, 0) and item["type"] == "task"]
+
+    # Count tasks by category
+    task_stats = {
+        "non_negotiable": tasks.filter(category=TaskCategory.NON_NEGOTIABLE).count(),
+        "secondary": tasks.filter(category=TaskCategory.SECONDARY).count(),
+        "fun": tasks.filter(category=TaskCategory.FUN).count(),
+    }
+
+    context = {
+        "date": date,
+        "date_display": date.strftime("%A, %B %d, %Y"),
+        "timeline_items": timeline_items,
+        "late_tasks": late_tasks,
+        "task_stats": task_stats,
+        "today": timezone.now().date(),
+    }
+
+    return render(request, "admin/scheduler/task_data_view.html", context)
+
+
+def get_category_icon(category):
+    """Get icon for task category"""
+    icons = {
+        TaskCategory.NON_NEGOTIABLE: "⭐",
+        TaskCategory.SECONDARY: "📋",
+        TaskCategory.FUN: "🎉",
+    }
+    return icons.get(category, "📝")
+
+
+def get_tasks_by_date_api(request, year, month, day):
+    """API endpoint to fetch tasks for a specific date"""
+    try:
+        date = datetime(year, month, day).date()
+    except ValueError:
+        return JsonResponse({"error": "Invalid date"}, status=400)
+
+    tasks = PersonalTask.objects.filter(date=date).values(
+        "id", "title", "start_time", "end_time", "category", "is_completed"
+    )
+
+    return JsonResponse({
+        "date": date.isoformat(),
+        "tasks": list(tasks)
+    })
+
+
+@require_http_methods(["GET", "POST"])
+def create_personal_task(request, year, month, day):
+    """Create a new personal task for a specific date"""
+    try:
+        date = datetime(year, month, day).date()
+    except ValueError:
+        messages.error(request, "Invalid date")
+        return redirect("calendar_view")
+
+    if request.method == "POST":
+        form = PersonalTaskForm(request.POST)
+        if form.is_valid():
+            task = form.save(commit=False)
+            messages.success(request, f"Task '{task.title}' created successfully!")
+            task.save()
+            return redirect("task_data_view", year=date.year, month=date.month, day=date.day)
+    else:
+        initial_data = {"date": date}
+        form = PersonalTaskForm(initial=initial_data)
+
+    context = {
+        "form": form,
+        "date": date,
+        "date_display": date.strftime("%A, %B %d, %Y"),
+    }
+    return render(request, "admin/scheduler/create_personal_task.html", context)
+
+
+@require_http_methods(["GET", "POST"])
+def edit_personal_task(request, task_id):
+    """Edit an existing personal task"""
+    task = get_object_or_404(PersonalTask, id=task_id)
+
+    if request.method == "POST":
+        form = PersonalTaskForm(request.POST, instance=task)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Task '{task.title}' updated successfully!")
+            return redirect("task_data_view", year=task.date.year, month=task.date.month, day=task.date.day)
+    else:
+        form = PersonalTaskForm(instance=task)
+
+    context = {
+        "form": form,
+        "task": task,
+        "date": task.date,
+        "date_display": task.date.strftime("%A, %B %d, %Y"),
+        "is_edit": True,
+    }
+    return render(request, "admin/scheduler/create_personal_task.html", context)
+
+
+@require_http_methods(["POST"])
+def delete_personal_task(request, task_id):
+    """Delete a personal task"""
+    task = get_object_or_404(PersonalTask, id=task_id)
+    date = task.date
+    title = task.title
+
+    task.delete()
+    messages.success(request, f"Task '{title}' deleted successfully!")
+    return redirect("task_data_view", year=date.year, month=date.month, day=date.day)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def toggle_task_completion(request, task_id):
+    """Toggle task completion status via AJAX"""
+    task = get_object_or_404(PersonalTask, id=task_id)
+
+    try:
+        data = json.loads(request.body)
+        is_completed = data.get("is_completed", False)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+    try:
+        # Update task completion status
+        task.is_completed = is_completed
+        task.save()
+
+        # Record completion in history
+        TaskCompletion.objects.create(
+            task=task,
+            is_completed=is_completed
+        )
+
+        return JsonResponse({
+            "success": True,
+            "task_id": task.id,
+            "is_completed": task.is_completed,
+            "message": f"Task marked as {'completed' if is_completed else 'incomplete'}"
+        })
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)

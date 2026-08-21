@@ -1,0 +1,44 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Confirm Action - Task Scheduler{% endblock %}
+
+{% block nav_queues %}active{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'job_details' job.name %}" class="btn btn-secondary" style="display: inline-block;">← Back to Job</a>
+</div>
+
+<h2 class="section-title">Confirm Action</h2>
+
+<div class="glass-card" style="margin-bottom: 2rem; max-width: 600px;">
+    <h3 class="section-title light">{{ action|upper }} Job</h3>
+
+    <div style="background: rgba(124, 58, 237, 0.1); border: 1px solid rgba(124, 58, 237, 0.3); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem;">
+        <div style="margin-bottom: 1rem;">
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Job Name</div>
+            <div style="color: #f8fafc; word-break: break-all;">{{ job.name }}</div>
+        </div>
+        <div>
+            <div style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Function</div>
+            <div style="color: #a78bfa; font-family: monospace;">{{ job.func_name }}</div>
+        </div>
+    </div>
+
+    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem;">
+        {% if action == 'delete' %}
+            <p style="color: #f8fafc; margin-bottom: 0.5rem;">⚠️ Are you sure you want to <strong>delete</strong> this job? This action cannot be undone.</p>
+        {% elif action == 'cancel' %}
+            <p style="color: #f8fafc; margin-bottom: 0.5rem;">⚠️ Are you sure you want to <strong>cancel</strong> this job? It will be stopped immediately.</p>
+        {% elif action == 'enqueue' %}
+            <p style="color: #f8fafc; margin-bottom: 0.5rem;">⚠️ This will re-enqueue the job to run again.</p>
+        {% endif %}
+    </div>
+
+    <form method="post" style="display: flex; gap: 1rem;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Confirm {{ action|upper }}</button>
+        <a href="{% url 'job_details' job.name %}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

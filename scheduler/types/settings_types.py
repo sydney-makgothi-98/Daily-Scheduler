@@ -1,0 +1,99 @@
+import signal
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, ClassVar
+
+from scheduler.helpers.timeouts import BaseDeathPenalty, TimerDeathPenalty, UnixSignalDeathPenalty
+
+_DEATH_PENALTY_CLASS = UnixSignalDeathPenalty if hasattr(signal, "SIGALRM") else TimerDeathPenalty
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
+
+
+class Broker(Enum):
+    REDIS = "redis"
+    FAKEREDIS = "fakeredis"
+    VALKEY = "valkey"
+
+
+def _token_validation(token: str) -> bool:
+    return False
+
+
+@dataclass(slots=True, kw_only=True)
+class SchedulerConfiguration:
+    """Configuration for django-tasks-scheduler"""
+
+    EXECUTIONS_IN_PAGE: int = 20
+    SCHEDULER_INTERVAL: int = 10
+    BROKER: Broker = Broker.REDIS
+    TOKEN_VALIDATION_METHOD: Callable[[str], bool] = _token_validation
+    CALLBACK_TIMEOUT: int = 60  # Callback timeout in seconds (success/failure/stopped)
+    # Default values, can be override per task
+    DEFAULT_SUCCESS_TTL: int = 10 * 60  # Time To Live (TTL) in seconds to keep successful job results
+    DEFAULT_FAILURE_TTL: int = 365 * 24 * 60 * 60  # Time To Live (TTL) in seconds to keep job failure information
+    DEFAULT_JOB_TTL: int = 10 * 60  # Time To Live (TTL) in seconds to keep job information
+    DEFAULT_JOB_TIMEOUT: int = 5 * 60  # timeout (seconds) for a job
+    # General configuration values
+    DEFAULT_WORKER_TTL: int = 10 * 60  # Time To Live (TTL) in seconds to keep worker information after last heartbeat
+    DEFAULT_MAINTENANCE_TASK_INTERVAL: int = 10 * 60  # The interval to run maintenance tasks in seconds. 10 minutes.
+    DEFAULT_JOB_MONITORING_INTERVAL: int = 30  # The interval to monitor jobs in seconds.
+    SCHEDULER_FALLBACK_PERIOD_SECS: int = 120  # Period (secs) to wait before requiring to reacquire locks
+    DEATH_PENALTY_CLASS: type[BaseDeathPenalty] = _DEATH_PENALTY_CLASS
+    # Admin views that probe every configured queue for read-only operations (e.g. locating a job across
+    # queues, queue/worker statistics) use a short-timeout, no-retry connection by default, so a single
+    # unreachable queue cannot stall the request for several seconds (redis-py >= 8 retries connection
+    # errors with backoff by default). Set to False to use each queue's configured connection settings
+    # unmodified for these probes too, e.g. if retries are required even there.
+    FAIL_FAST_QUEUE_PROBING: bool = True
+    # Socket connect timeout (seconds) applied to queue connections when FAIL_FAST_QUEUE_PROBING is enabled.
+    QUEUE_PROBE_SOCKET_CONNECT_TIMEOUT: float = 2.0
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class QueueConfiguration:
+    __CONNECTION_FIELDS__: ClassVar[set[str]] = {
+        "URL",
+        "DB",
+        "UNIX_SOCKET_PATH",
+        "HOST",
+        "PORT",
+        "PASSWORD",
+        "SENTINELS",
+        "MASTER_NAME",
+        "CONNECTION_KWARGS",
+    }
+    DB: int | None = None
+    # Redis connection parameters, either UNIX_SOCKET_PATH/URL/separate params (HOST, PORT, PASSWORD) should be provided
+    UNIX_SOCKET_PATH: str | None = None
+    URL: str | None = None
+    HOST: str | None = None
+    PORT: int | None = None
+    USERNAME: str | None = None
+    PASSWORD: str | None = None
+
+    ASYNC: bool = True
+
+    SENTINELS: list[tuple[str, int]] | None = None
+    SENTINEL_KWARGS: dict[str, str] | None = None
+    MASTER_NAME: str | None = None
+    CONNECTION_KWARGS: dict[str, Any] | None = None
+
+    def __post_init__(self):
+        if not any((self.URL, self.UNIX_SOCKET_PATH, self.HOST, self.SENTINELS)):
+            raise ValueError(f"At least one of URL, UNIX_SOCKET_PATH, HOST must be provided: {self}")
+        if sum((self.URL is not None, self.UNIX_SOCKET_PATH is not None, self.HOST is not None)) > 1:
+            raise ValueError(f"Only one of URL, UNIX_SOCKET_PATH, HOST should be provided: {self}")
+        if self.HOST is not None and (self.PORT is None or self.DB is None):
+            raise ValueError(f"HOST requires PORT and DB: {self}")
+
+    def same_connection_params(self, other: Self) -> bool:
+        for field in self.__CONNECTION_FIELDS__:
+            if getattr(self, field) != getattr(other, field):
+                return False
+        return True

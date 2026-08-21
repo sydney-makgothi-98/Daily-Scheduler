@@ -1,0 +1,165 @@
+import dataclasses
+from math import ceil
+from typing import Any
+
+from django.contrib import admin
+from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, JsonResponse
+from django.shortcuts import render
+from django.views.decorators.cache import never_cache
+
+from scheduler import settings
+from scheduler.helpers.queues import Queue, get_all_workers
+from scheduler.helpers.queues.queue_logic import NoSuchRegistryError
+from scheduler.redis_models import JobModel, JobNamesRegistry, WorkerModel
+from scheduler.settings import get_queue_names, logger
+from scheduler.types import ConnectionErrorTypes
+from scheduler.views.helpers import get_queue
+
+
+def _get_registry_job_list(queue: Queue, registry: JobNamesRegistry, page: int) -> tuple[list[JobModel], int, range]:
+    items_per_page = settings.SCHEDULER_CONFIG.EXECUTIONS_IN_PAGE
+    num_jobs = registry.count(queue.connection)
+    job_list: list[JobModel] = []
+
+    if num_jobs == 0:
+        return job_list, num_jobs, range(1, 1)
+
+    last_page = ceil(num_jobs / items_per_page)
+    page_range = range(1, last_page + 1)
+    offset = items_per_page * (page - 1)
+    job_names = registry.all(queue.connection, offset, offset + items_per_page - 1)
+    job_list = JobModel.get_many(job_names, connection=queue.connection)
+    remove_job_names = [job_name for i, job_name in enumerate(job_names) if job_list[i] is None]
+    valid_jobs = [job for job in job_list if job is not None]
+    for job_name in remove_job_names:
+        registry.delete(queue.connection, job_name)
+
+    return valid_jobs, num_jobs, page_range
+
+
+@never_cache  # type: ignore
+def list_registry_jobs(request: HttpRequest, queue_name: str, registry_name: str) -> HttpResponse:
+    queue = get_queue(queue_name)
+    try:
+        registry = queue.get_registry(registry_name)
+    except NoSuchRegistryError:
+        return HttpResponseNotFound()
+    title = registry_name.capitalize()
+    page = int(request.GET.get("page", 1))
+    job_list, num_jobs, page_range = _get_registry_job_list(queue, registry, page)
+
+    context_data = {
+        **admin.site.each_context(request),
+        "queue": queue,
+        "registry_name": registry_name,
+        "registry": registry,
+        "jobs": job_list,
+        "num_jobs": num_jobs,
+        "page": page,
+        "page_range": page_range,
+        "job_status": title,
+    }
+    return render(request, "admin/scheduler/jobs_new.html", context_data)
+
+
+@never_cache  # type: ignore
+def queue_workers(request: HttpRequest, queue_name: str) -> HttpResponse:
+    queue = get_queue(queue_name)
+    queue.clean_registries()
+
+    all_workers = WorkerModel.all(queue.connection)
+    worker_list = [worker for worker in all_workers if queue.name in worker.queue_names]
+
+    context_data = {
+        **admin.site.each_context(request),
+        "queue": queue,
+        "workers": worker_list,
+    }
+    return render(request, "admin/scheduler/queue_workers_new.html", context_data)
+
+
+def stats_json(request: HttpRequest) -> JsonResponse | HttpResponseNotFound:
+    auth_token = request.headers.get("Authorization")
+    token_validation_func = settings.SCHEDULER_CONFIG.TOKEN_VALIDATION_METHOD
+    if request.user.is_staff or (token_validation_func and auth_token and token_validation_func(auth_token)):  # type: ignore
+        return JsonResponse(get_statistics())
+
+    return HttpResponseNotFound()
+
+
+@never_cache  # type: ignore
+def stats(request: HttpRequest) -> HttpResponse:
+    try:
+        context_data = {**admin.site.each_context(request), **get_statistics(run_maintenance_tasks=True)}
+    except Exception:
+        context_data = {**admin.site.each_context(request), "queues": []}
+    return render(request, "admin/scheduler/stats_new.html", context_data)
+
+
+@dataclasses.dataclass
+class QueueData:
+    name: str
+    queued_jobs: int
+    oldest_job_timestamp: str | None
+    scheduler_pid: int | None
+    workers: int
+    finished_jobs: int
+    started_jobs: int
+    failed_jobs: int
+    scheduled_jobs: int
+    canceled_jobs: int
+
+
+def get_statistics(run_maintenance_tasks: bool = False) -> dict[str, list[dict[str, Any]]]:
+    queue_names = get_queue_names()
+    queues: list[QueueData] = []
+    queue_workers_count: dict[str, int] = dict.fromkeys(queue_names, 0)
+    workers = get_all_workers()
+    for worker in workers:
+        for queue_name in worker.queue_names:
+            if queue_name not in queue_workers_count:
+                logger.warning(f"Worker {worker.name} is working on queue {queue_name} which is not defined")
+                queue_workers_count[queue_name] = 0
+            queue_workers_count[queue_name] += 1
+    for queue_name in queue_names:
+        try:
+            queue = get_queue(queue_name, fail_fast=True)
+            connection_kwargs = queue.connection.connection_pool.connection_kwargs
+
+            if run_maintenance_tasks:
+                queue.clean_registries()
+
+            # Raw access to the first item from left of the broker list.
+            # This might not be accurate since new job can be added from the left
+            # with `at_front` parameters.
+            # Ideally rq should supports Queue.oldest_job
+
+            last_job_name = queue.first_queued_job_name()
+            last_job = JobModel.get(last_job_name, connection=queue.connection) if last_job_name else None
+            if last_job and last_job.enqueued_at:
+                oldest_job_timestamp = last_job.enqueued_at.isoformat()
+            else:
+                oldest_job_timestamp = None
+
+            # parse_class and connection_pool are not needed and not JSON serializable
+            connection_kwargs.pop("parser_class", None)
+            connection_kwargs.pop("connection_pool", None)
+
+            queue_data = QueueData(
+                name=queue.name,
+                queued_jobs=queue.queued_job_registry.count(queue.connection),
+                oldest_job_timestamp=oldest_job_timestamp,
+                scheduler_pid=queue.scheduler_pid,
+                workers=queue_workers_count[queue.name],
+                finished_jobs=queue.finished_job_registry.count(queue.connection),
+                started_jobs=queue.active_job_registry.count(queue.connection),
+                failed_jobs=queue.failed_job_registry.count(queue.connection),
+                scheduled_jobs=queue.scheduled_job_registry.count(queue.connection),
+                canceled_jobs=queue.canceled_job_registry.count(queue.connection),
+            )
+            queues.append(queue_data)
+        except ConnectionErrorTypes as e:
+            logger.error(f"Could not connect for queue {queue_name}: {e}")
+            continue
+
+    return {"queues": [dataclasses.asdict(q) for q in queues]}

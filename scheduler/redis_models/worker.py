@@ -1,0 +1,120 @@
+import dataclasses
+from collections.abc import Generator
+from datetime import datetime
+from enum import Enum
+from typing import Any, ClassVar
+
+from scheduler.helpers.utils import utcnow
+from scheduler.redis_models.base import MAX_KEYS, HashModel
+from scheduler.settings import SCHEDULER_CONFIG, logger
+from scheduler.types import ConnectionType, Self
+
+
+class WorkerStatus(str, Enum):
+    CREATED = "created"
+    STARTING = "starting"
+    STARTED = "started"
+    SUSPENDED = "suspended"
+    BUSY = "busy"
+    IDLE = "idle"
+    STOPPED = "stopped"
+
+
+@dataclasses.dataclass(slots=True, kw_only=True)
+class WorkerModel(HashModel):
+    name: str
+    queue_names: list[str]
+    pid: int
+    hostname: str
+    ip_address: str
+    version: str
+    python_version: str
+    state: WorkerStatus
+    job_execution_process_pid: int = 0
+    successful_job_count: int = 0
+    failed_job_count: int = 0
+    completed_jobs: int = 0
+    birth: datetime | None = None
+    last_heartbeat: datetime | None = None
+    is_suspended: bool = False
+    current_job_name: str | None = None
+    stopped_job_name: str | None = None
+    total_working_time_ms: float = 0.0
+    current_job_working_time: float = 0
+    last_cleaned_at: datetime | None = None
+    shutdown_requested_date: datetime | None = None
+    has_scheduler: bool = False
+    death: datetime | None = None
+
+    _list_key: ClassVar[str] = ":workers:ALL:"
+    _children_key_template: ClassVar[str] = ":queue-workers:{}:"
+    _element_key_template: ClassVar[str] = ":workers:{}"
+
+    def save(self, connection: ConnectionType, save_all: bool = False) -> None:
+        with connection.pipeline() as pipeline:
+            super(WorkerModel, self).save(pipeline, save_all)
+            for queue_name in self.queue_names:
+                pipeline.sadd(self._children_key_template.format(queue_name), self.name)
+            pipeline.expire(self._key, SCHEDULER_CONFIG.DEFAULT_WORKER_TTL + 60)
+            pipeline.execute()
+
+    def delete(self, connection: ConnectionType) -> None:
+        logger.debug(f"Deleting worker {self.name}")
+        pipeline = connection.pipeline()
+        now = utcnow()
+        self.death = now
+        pipeline.hset(self._key, "death", now.isoformat())
+        pipeline.expire(self._key, 60)
+        pipeline.srem(self._list_key, self.name)
+        for queue_name in self.queue_names:
+            pipeline.srem(self._children_key_template.format(queue_name), self.name)
+        pipeline.execute()
+
+    def __eq__(self, other: Self) -> bool:
+        if not isinstance(other, self.__class__):
+            raise TypeError("Cannot compare workers to other types (of workers)")
+        return self._key == other._key
+
+    def __hash__(self):
+        """The hash does not take the database/connection into account"""
+        return hash((self._key, ",".join(self.queue_names)))
+
+    def set_current_job_working_time(self, job_execution_time: float, connection: ConnectionType) -> None:
+        self.set_field("current_job_working_time", job_execution_time, connection=connection)
+
+    def heartbeat(self, connection: ConnectionType, timeout: int | None = None) -> None:
+        self.last_heartbeat = utcnow()
+        self.save(connection, save_all=True)
+        timeout = timeout or SCHEDULER_CONFIG.DEFAULT_WORKER_TTL + 60
+        connection.expire(self._key, timeout)
+        logger.debug(f"Next heartbeat for worker {self._key} should arrive in {timeout} seconds.")
+
+    @classmethod
+    def cleanup(cls, connection: ConnectionType, queue_name: str | None = None):
+        worker_names = cls.all_names(connection, queue_name)
+        worker_keys = [cls.key_for(worker_name) for worker_name in worker_names]
+        with connection.pipeline() as pipeline:
+            for worker_key in worker_keys:
+                pipeline.exists(worker_key)
+            worker_exist: list[int] = pipeline.execute()
+            invalid_workers: list[str] = [
+                worker_name for i, worker_name in enumerate(worker_names) if not worker_exist[i]
+            ]
+            if len(invalid_workers) == 0:
+                return
+            for invalid_workers_subset in _split_list(invalid_workers, MAX_KEYS):
+                pipeline.srem(cls._list_key, *invalid_workers_subset)
+                if queue_name:
+                    pipeline.srem(cls._children_key_template.format(queue_name), *invalid_workers_subset)
+                pipeline.execute()
+
+
+def _split_list(a_list: list[str], segment_size: int) -> Generator[list[str], Any, None]:
+    """Splits a list into multiple smaller lists having size `segment_size`
+
+    :param a_list: The list to split
+    :param segment_size: The segment size to split into
+    :returns: The list split into smaller lists
+    """
+    for i in range(0, len(a_list), segment_size):
+        yield a_list[i : i + segment_size]

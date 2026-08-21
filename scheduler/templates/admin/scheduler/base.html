@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Task Scheduler Dashboard{% endblock %}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-purple: #7c3aed;
+            --primary-purple-dark: #6d28d9;
+            --primary-purple-light: #a78bfa;
+            --secondary-purple: #ec4899;
+            --bg-dark: #0f172a;
+            --bg-darker: #0a0e27;
+            --glass-light: rgba(255, 255, 255, 0.1);
+            --glass-dark: rgba(0, 0, 0, 0.3);
+            --text-light: #f8fafc;
+            --text-muted: #cbd5e1;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --info: #0ea5e9;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+            color: var(--text-light);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 20% 50%, rgba(124, 58, 237, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 80%, rgba(236, 72, 153, 0.1) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .navbar {
+            background: var(--glass-light);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .navbar-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary-purple) 0%, var(--secondary-purple) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.3s ease;
+            font-weight: 500;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary-purple-light);
+        }
+
+        .nav-links a.active {
+            color: var(--primary-purple);
+            border-bottom: 2px solid var(--primary-purple);
+            padding-bottom: 0.5rem;
+        }
+
+        .nav-links button {
+            transition: color 0.3s ease;
+        }
+
+        .nav-links button:hover {
+            color: var(--primary-purple-light);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .glass-card {
+            background: var(--glass-light);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .glass-card:hover {
+            border-color: rgba(255, 255, 255, 0.3);
+            background: var(--glass-light);
+            transform: translateY(-2px);
+        }
+
+        .glass-card.glass-card-elevated {
+            background: var(--glass-light);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(124, 58, 237, 0.6);
+            box-shadow: 0 8px 32px 0 rgba(124, 58, 237, 0.2);
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary-purple-light);
+        }
+
+        .stat-subtext {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+
+        .queue-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .queue-card {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.15) 0%, rgba(236, 72, 153, 0.15) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .queue-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--primary-purple);
+            box-shadow: 0 8px 32px 0 rgba(124, 58, 237, 0.3);
+        }
+
+        .queue-name {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--primary-purple-light);
+            margin-bottom: 1rem;
+        }
+
+        .queue-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .queue-info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .queue-info-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.25rem;
+        }
+
+        .queue-info-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-light);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .status-badge.active {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .status-badge.pending {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }
+
+        .status-badge.failed {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--error);
+            border: 1px solid var(--error);
+        }
+
+        .status-badge.info {
+            background: rgba(14, 165, 233, 0.2);
+            color: var(--info);
+            border: 1px solid var(--info);
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-purple) 0%, var(--primary-purple-dark) 100%);
+            color: white;
+            border: none;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(124, 58, 237, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-light);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--error);
+            border: 1px solid var(--error);
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .btn-success:hover {
+            background: rgba(16, 185, 129, 0.3);
+        }
+
+        .table-container {
+            overflow-x: auto;
+            border-radius: 16px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: rgba(124, 58, 237, 0.2);
+            color: var(--primary-purple-light);
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid rgba(124, 58, 237, 0.3);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-light);
+        }
+
+        tr:hover {
+            background: rgba(124, 58, 237, 0.1);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .action-buttons .btn {
+            padding: 0.5rem 1rem;
+            font-size: 0.75rem;
+        }
+
+        .messages {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .message {
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            border-left: 4px solid;
+            backdrop-filter: blur(20px);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .message.success {
+            background: rgba(16, 185, 129, 0.2);
+            border-color: var(--success);
+            color: var(--success);
+        }
+
+        .message.error {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: var(--error);
+            color: var(--error);
+        }
+
+        .message.warning {
+            background: rgba(245, 158, 11, 0.2);
+            border-color: var(--warning);
+            color: var(--warning);
+        }
+
+        .message.info {
+            background: rgba(14, 165, 233, 0.2);
+            border-color: var(--info);
+            color: var(--info);
+        }
+
+        .section-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, var(--primary-purple) 0%, var(--secondary-purple) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .section-title.light {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: var(--primary-purple);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 2rem;
+        }
+
+        .pagination a, .pagination span {
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-light);
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .pagination a:hover {
+            border-color: var(--primary-purple);
+            background: rgba(124, 58, 237, 0.2);
+        }
+
+        .pagination .current {
+            background: var(--primary-purple);
+            border-color: var(--primary-purple);
+            font-weight: 600;
+        }
+
+        @media (max-width: 768px) {
+            .navbar-content {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .navbar h1 {
+                font-size: 1.25rem;
+                margin: 0;
+            }
+
+            .nav-links {
+                flex-direction: row;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+
+            .nav-links a {
+                font-size: 0.875rem;
+                padding: 0.5rem 0.75rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .queue-list {
+                grid-template-columns: 1fr;
+            }
+
+            .queue-info {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            table {
+                font-size: 0.875rem;
+            }
+
+            td, th {
+                padding: 0.75rem;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+            }
+
+            .action-buttons .btn {
+                width: 100%;
+            }
+
+            #toastContainer {
+                top: 1rem;
+                right: 1rem;
+                left: 1rem;
+                max-width: none;
+            }
+
+            .container {
+                padding: 1rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .navbar {
+                padding: 0.75rem 1rem;
+            }
+
+            .nav-links {
+                gap: 0.25rem;
+            }
+
+            .nav-links a {
+                font-size: 0.75rem;
+                padding: 0.25rem 0.5rem;
+            }
+
+            .section-title {
+                font-size: 1.5rem;
+            }
+
+            .stat-card {
+                padding: 1rem;
+            }
+
+            .glass-card {
+                padding: 1rem;
+            }
+
+            .btn {
+                padding: 0.5rem 1rem;
+                font-size: 0.75rem;
+            }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="navbar">
+        <div class="navbar-content">
+            <h1>⚡ Task Scheduler</h1>
+            <ul class="nav-links">
+                <li><a href="{% url 'queues_home' %}" class="{% block nav_queues %}{% endblock %}">Queues</a></li>
+                <li><a href="{% url 'workers_home' %}" class="{% block nav_workers %}{% endblock %}">Workers</a></li>
+                <li><a href="{% url 'calendar_view' %}" class="{% block nav_calendar %}{% endblock %}">📅 Calendar</a></li>
+                <li><a href="{% url 'analytics_dashboard' %}" class="{% block nav_analytics %}{% endblock %}">📊 Analytics</a></li>
+                <li><a href="{% url 'prayer_settings' %}" class="{% block nav_prayers %}{% endblock %}">🕌 Prayers</a></li>
+                <li><button id="helpBtn" style="background: none; border: none; color: inherit; cursor: pointer; font-size: 0.875rem; padding: 0; transition: color 0.3s ease; color: #cbd5e1;" title="Show keyboard shortcuts (press ?)">❓ Help</button></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div id="shortcutsModal" style="
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(5px);
+        z-index: 2001;
+        justify-content: center;
+        align-items: center;
+        padding: 1rem;
+    ">
+        <div style="
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(10, 14, 39, 0.95) 100%);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 600px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+        ">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h2 style="color: #f8fafc; font-size: 1.5rem;">⌨️ Keyboard Shortcuts</h2>
+                <button id="closeShortcutsBtn" style="
+                    background: none;
+                    border: none;
+                    color: #cbd5e1;
+                    font-size: 1.5rem;
+                    cursor: pointer;
+                    padding: 0;
+                    width: 2rem;
+                    height: 2rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                ">×</button>
+            </div>
+
+            <div style="display: grid; gap: 2rem;">
+                <!-- Form Shortcuts -->
+                <div>
+                    <h3 style="color: #a78bfa; font-size: 1rem; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.875rem;">📝 Form Shortcuts</h3>
+                    <div style="display: grid; gap: 0.75rem;">
+                        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem; align-items: start;">
+                            <kbd style="background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: 4px; text-align: center; border: 1px solid rgba(124,58,237,0.3);">Ctrl + S</kbd>
+                            <span style="color: #cbd5e1;">Submit form (on create/edit task pages)</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem; align-items: start;">
+                            <kbd style="background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: 4px; text-align: center; border: 1px solid rgba(124,58,237,0.3);">ESC</kbd>
+                            <span style="color: #cbd5e1;">Cancel form and go back</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem; align-items: start;">
+                            <kbd style="background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: 4px; text-align: center; border: 1px solid rgba(124,58,237,0.3);">Tab</kbd>
+                            <span style="color: #cbd5e1;">Navigate between form fields</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Task Modal Shortcuts -->
+                <div>
+                    <h3 style="color: #a78bfa; font-size: 1rem; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.875rem;">✓ Task Completion Modal</h3>
+                    <div style="display: grid; gap: 0.75rem;">
+                        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem; align-items: start;">
+                            <kbd style="background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: 4px; text-align: center; border: 1px solid rgba(124,58,237,0.3);">Y</kbd>
+                            <span style="color: #cbd5e1;">Mark task as completed</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem; align-items: start;">
+                            <kbd style="background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: 4px; text-align: center; border: 1px solid rgba(124,58,237,0.3);">N</kbd>
+                            <span style="color: #cbd5e1;">Mark task as incomplete</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem; align-items: start;">
+                            <kbd style="background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: 4px; text-align: center; border: 1px solid rgba(124,58,237,0.3);">←/→</kbd>
+                            <span style="color: #cbd5e1;">Navigate between buttons</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem; align-items: start;">
+                            <kbd style="background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: 4px; text-align: center; border: 1px solid rgba(124,58,237,0.3);">ESC</kbd>
+                            <span style="color: #cbd5e1;">Cancel and close modal</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- General Shortcuts -->
+                <div>
+                    <h3 style="color: #a78bfa; font-size: 1rem; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.875rem;">🎯 General Shortcuts</h3>
+                    <div style="display: grid; gap: 0.75rem;">
+                        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem; align-items: start;">
+                            <kbd style="background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: 4px; text-align: center; border: 1px solid rgba(124,58,237,0.3);">?</kbd>
+                            <span style="color: #cbd5e1;">Show this help menu</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem; align-items: start;">
+                            <kbd style="background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: 4px; text-align: center; border: 1px solid rgba(124,58,237,0.3);">Ctrl + K</kbd>
+                            <span style="color: #cbd5e1;">Keyboard shortcuts hint</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="closeShortcutsBottomBtn" class="btn btn-secondary" style="width: 100%; margin-top: 2rem;">Close (or press ESC)</button>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" style="
+        position: fixed;
+        top: 2rem;
+        right: 2rem;
+        z-index: 2000;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        max-width: 400px;
+    "></div>
+
+    <div class="container">
+        {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                    <div class="message {% if message.tags %}{{ message.tags }}{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <script>
+    // Toast notification system
+    window.showToast = function(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+
+        const bgColor = {
+            'success': 'rgba(16, 185, 129, 0.1)',
+            'error': 'rgba(239, 68, 68, 0.1)',
+            'warning': 'rgba(245, 158, 11, 0.1)',
+            'info': 'rgba(14, 165, 233, 0.1)'
+        }[type] || 'rgba(14, 165, 233, 0.1)';
+
+        const borderColor = {
+            'success': 'rgba(16, 185, 129, 0.3)',
+            'error': 'rgba(239, 68, 68, 0.3)',
+            'warning': 'rgba(245, 158, 11, 0.3)',
+            'info': 'rgba(14, 165, 233, 0.3)'
+        }[type] || 'rgba(14, 165, 233, 0.3)';
+
+        const textColor = {
+            'success': '#10b981',
+            'error': '#ef4444',
+            'warning': '#f59e0b',
+            'info': '#0ea5e9'
+        }[type] || '#0ea5e9';
+
+        toast.style.cssText = `
+            background: ${bgColor};
+            border: 1px solid ${borderColor};
+            border-radius: 8px;
+            padding: 1rem;
+            color: ${textColor};
+            font-weight: 500;
+            animation: slideInRight 0.3s ease;
+            backdrop-filter: blur(20px);
+        `;
+
+        toast.textContent = message;
+        container.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.animation = 'slideOutRight 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
+    };
+
+    // Add CSS animations
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideInRight {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOutRight {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Keyboard shortcuts modal
+    const shortcutsModal = document.getElementById('shortcutsModal');
+    const helpBtn = document.getElementById('helpBtn');
+    const closeShortcutsBtn = document.getElementById('closeShortcutsBtn');
+    const closeShortcutsBottomBtn = document.getElementById('closeShortcutsBottomBtn');
+
+    function openShortcutsModal() {
+        shortcutsModal.style.display = 'flex';
+    }
+
+    function closeShortcutsModal() {
+        shortcutsModal.style.display = 'none';
+    }
+
+    helpBtn.addEventListener('click', openShortcutsModal);
+    closeShortcutsBtn.addEventListener('click', closeShortcutsModal);
+    closeShortcutsBottomBtn.addEventListener('click', closeShortcutsModal);
+
+    shortcutsModal.addEventListener('click', (e) => {
+        if (e.target === shortcutsModal) {
+            closeShortcutsModal();
+        }
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Ctrl/Cmd + S to submit forms
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            const form = document.querySelector('form');
+            if (form) {
+                form.dispatchEvent(new Event('submit'));
+                form.submit();
+                window.showToast('Form submitted', 'success', 1500);
+            }
+        }
+
+        // Ctrl/Cmd + K to show shortcuts
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            e.preventDefault();
+            openShortcutsModal();
+        }
+
+        // ? to show shortcuts
+        if (e.key === '?' && shortcutsModal.style.display !== 'flex') {
+            openShortcutsModal();
+        }
+
+        // ESC to close shortcuts modal
+        if (e.key === 'Escape' && shortcutsModal.style.display === 'flex') {
+            closeShortcutsModal();
+        }
+    });
+
+    // Add focus styles for better accessibility
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Tab') {
+            document.body.style.outline = 'none';
+        }
+    });
+
+    document.addEventListener('mousedown', function() {
+        document.body.classList.remove('keyboard-nav');
+    });
+
+    document.addEventListener('keydown', function() {
+        document.body.classList.add('keyboard-nav');
+    });
+    </script>
+</body>
+</html>

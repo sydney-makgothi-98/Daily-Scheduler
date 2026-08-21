@@ -1,0 +1,116 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Prayer Settings - Task Scheduler{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="/" class="btn btn-secondary" style="display: inline-block;">← Back to Dashboard</a>
+</div>
+
+<h2 class="section-title">🕌 Prayer Times Settings</h2>
+
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <p style="color: #cbd5e1; margin-bottom: 1rem;">
+        Configure your daily prayer times below. These will automatically appear on your daily schedule.
+        Make sure to set all 5 prayers: Fajr, Zhor, Asr, Magrib, and Eisha.
+    </p>
+    <a href="{% url 'create_prayer' %}" class="btn btn-primary">+ Add Prayer Time</a>
+</div>
+
+{% if prayers %}
+<div class="glass-card">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Prayer</th>
+                    <th>Start Time</th>
+                    <th>End Time</th>
+                    <th>Duration</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for prayer in prayers %}
+                <tr>
+                    <td>
+                        <span style="font-weight: 600; color: #a78bfa;">
+                            {{ prayer.get_prayer_name_display }}
+                        </span>
+                    </td>
+                    <td>{{ prayer.start_time|time:"H:i" }}</td>
+                    <td>{{ prayer.end_time|time:"H:i" }}</td>
+                    <td style="font-size: 0.875rem; color: #cbd5e1;">
+                        {% load tz %}
+                        {% comment %}Calculate duration{% endcomment %}
+                        <span id="duration-{{ prayer.id }}">--</span>
+                    </td>
+                    <td>
+                        <div class="action-buttons">
+                            <a href="{% url 'update_prayer' prayer.id %}" class="btn btn-primary">Edit</a>
+                            <form method="post" action="{% url 'delete_prayer' prayer.id %}" style="display: inline;">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure?')">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // Calculate prayer durations
+    document.querySelectorAll('table tbody tr').forEach((row, index) => {
+        const startCell = row.cells[1].textContent.trim();
+        const endCell = row.cells[2].textContent.trim();
+
+        const [startH, startM] = startCell.split(':').map(Number);
+        const [endH, endM] = endCell.split(':').map(Number);
+
+        let startMinutes = startH * 60 + startM;
+        let endMinutes = endH * 60 + endM;
+
+        if (endMinutes < startMinutes) {
+            endMinutes += 24 * 60;
+        }
+
+        const durationMinutes = endMinutes - startMinutes;
+        const hours = Math.floor(durationMinutes / 60);
+        const minutes = durationMinutes % 60;
+
+        const prayerId = row.querySelector('[id^="duration-"]')?.id.replace('duration-', '');
+        const durationEl = document.getElementById(`duration-${prayerId}`);
+        if (durationEl) {
+            durationEl.textContent = `${hours}h ${minutes}m`;
+        }
+    });
+</script>
+{% else %}
+<div class="glass-card">
+    <div class="empty-state">
+        <div class="empty-state-icon">🕌</div>
+        <p>No prayer times configured yet</p>
+        <p style="font-size: 0.875rem; margin-top: 0.5rem; margin-bottom: 1.5rem;">
+            Add your 5 daily prayers to get started
+        </p>
+        <a href="{% url 'create_prayer' %}" class="btn btn-primary">Add Prayer Time</a>
+    </div>
+</div>
+{% endif %}
+
+<style>
+    .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .action-buttons .btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.75rem;
+    }
+</style>
+{% endblock %}

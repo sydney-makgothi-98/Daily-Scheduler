@@ -11,12 +11,31 @@
 
 <!-- Filters -->
 <div class="glass-card" style="margin-bottom: 2rem;">
-    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+    <div style="display: flex; gap: 2rem; align-items: center; flex-wrap: wrap;">
+        <!-- Time Period Filter -->
         <div>
-            <span style="color: #cbd5e1; margin-right: 1rem;">Filter:</span>
-            <a href="?filter=week" class="btn {% if filter_type == 'week' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">📅 Week</a>
-            <a href="?filter=month" class="btn {% if filter_type == 'month' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">📆 Month</a>
+            <span style="color: #cbd5e1; margin-right: 1rem; font-weight: 600;">📅 Period:</span>
+            <a href="?filter=week" class="btn {% if filter_type == 'week' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">Week</a>
+            <a href="?filter=month" class="btn {% if filter_type == 'month' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">Month</a>
         </div>
+
+        <!-- View Filter -->
+        <div>
+            <span style="color: #cbd5e1; margin-right: 1rem; font-weight: 600;">👁️ View:</span>
+            <a href="?filter={{ filter_type }}&view=all" class="btn {% if view_type == 'all' or not view_type %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">All Tasks</a>
+            <a href="?filter={{ filter_type }}&view=prayers" class="btn {% if view_type == 'prayers' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">Prayers</a>
+            <a href="?filter={{ filter_type }}&view=subtasks" class="btn {% if view_type == 'subtasks' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">Sub-tasks</a>
+        </div>
+
+        <!-- Category Filter -->
+        <div>
+            <span style="color: #cbd5e1; margin-right: 1rem; font-weight: 600;">📂 Category:</span>
+            <a href="?filter={{ filter_type }}&view={{ view_type }}&category=all" class="btn {% if not category or category == 'all' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">All</a>
+            <a href="?filter={{ filter_type }}&view={{ view_type }}&category=non_negotiable" class="btn {% if category == 'non_negotiable' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">⭐ Non-Negotiable</a>
+            <a href="?filter={{ filter_type }}&view={{ view_type }}&category=secondary" class="btn {% if category == 'secondary' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">📋 Secondary</a>
+            <a href="?filter={{ filter_type }}&view={{ view_type }}&category=fun" class="btn {% if category == 'fun' %}btn-primary{% else %}btn-secondary{% endif %}" style="display: inline-block;">🎉 Fun</a>
+        </div>
+
         <div style="color: #a78bfa; font-weight: 600;">
             {{ period }}
         </div>
@@ -56,8 +75,10 @@
 
 <!-- Statistics Cards -->
 <div class="stats-grid" style="margin-bottom: 2rem;">
+    {% if view_type != 'prayers' and view_type != 'subtasks' %}
     <!-- Non-Negotiable -->
-    <div class="stat-card">
+    {% if category != 'secondary' and category != 'fun' %}
+    <div class="stat-card" {% if non_negotiable_stats.total == 0 %}style="opacity: 0.5;"{% endif %}>
         <div class="stat-label">⭐ Non-Negotiable</div>
         <div style="display: flex; gap: 1rem; align-items: center;">
             <div>
@@ -74,9 +95,11 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Secondary -->
-    <div class="stat-card">
+    {% if category != 'non_negotiable' and category != 'fun' %}
+    <div class="stat-card" {% if secondary_stats.total == 0 %}style="opacity: 0.5;"{% endif %}>
         <div class="stat-label">📋 Secondary</div>
         <div style="display: flex; gap: 1rem; align-items: center;">
             <div>
@@ -93,9 +116,11 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Fun -->
-    <div class="stat-card">
+    {% if category != 'non_negotiable' and category != 'secondary' %}
+    <div class="stat-card" {% if fun_stats.total == 0 %}style="opacity: 0.5;"{% endif %}>
         <div class="stat-label">🎉 Fun Activities</div>
         <div style="display: flex; gap: 1rem; align-items: center;">
             <div>
@@ -112,6 +137,50 @@
             </div>
         </div>
     </div>
+    {% endif %}
+    {% endif %}
+
+    <!-- Subtasks -->
+    {% if view_type != 'prayers' and subtask_stats %}
+    <div class="stat-card" {% if subtask_stats.total == 0 %}style="opacity: 0.5;"{% endif %}>
+        <div class="stat-label">🔄 Sub-tasks</div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <div>
+                <div class="stat-value" style="font-size: 2rem;">{{ subtask_stats.completed }}/{{ subtask_stats.total }}</div>
+                <div class="stat-subtext">{{ subtask_stats.percentage|floatformat:0 }}% Complete</div>
+            </div>
+            <div style="flex: 1; height: 60px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; overflow: hidden;">
+                <div style="
+                    height: 100%;
+                    width: {{ subtask_stats.percentage }}%;
+                    background: linear-gradient(90deg, #ec4899 0%, #be185d 100%);
+                    transition: width 0.3s ease;
+                "></div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Prayers -->
+    {% if view_type != 'subtasks' and prayer_stats %}
+    <div class="stat-card" {% if prayer_stats.total == 0 %}style="opacity: 0.5;"{% endif %}>
+        <div class="stat-label">🕌 Prayers</div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <div>
+                <div class="stat-value" style="font-size: 2rem;">{{ prayer_stats.completed }}/{{ prayer_stats.total }}</div>
+                <div class="stat-subtext">{{ prayer_stats.percentage|floatformat:0 }}% Complete</div>
+            </div>
+            <div style="flex: 1; height: 60px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; overflow: hidden;">
+                <div style="
+                    height: 100%;
+                    width: {{ prayer_stats.percentage }}%;
+                    background: linear-gradient(90deg, #8b5cf6 0%, #7c3aed 100%);
+                    transition: width 0.3s ease;
+                "></div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Chart -->

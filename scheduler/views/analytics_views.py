@@ -188,6 +188,8 @@ def get_daily_prayer_stats(start_date, end_date):
 def analytics_dashboard(request):
     """Main analytics dashboard"""
     filter_type = request.GET.get("filter", "week")
+    view_type = request.GET.get("view", "all")
+    category = request.GET.get("category", "all")
     start_date, end_date = get_date_range(filter_type)
 
     # Calculate stats for each category
@@ -247,24 +249,64 @@ def analytics_dashboard(request):
                 "message": f"Prayer completion rate is {prayer_percentage:.0f}%. Keep improving!"
             })
 
+    # Filter context based on view type
+    if view_type == "prayers":
+        # Show only prayer stats
+        context_stats = {
+            "prayer_stats": prayer_stats,
+            "prayer_breakdown": prayer_breakdown,
+            "prayer_daily": prayer_daily,
+        }
+    elif view_type == "subtasks":
+        # Show only subtask stats
+        context_stats = {
+            "subtask_stats": subtask_stats,
+            "subtask_daily": subtask_daily,
+        }
+    else:  # "all" or default
+        # Show all stats
+        context_stats = {
+            "non_negotiable_stats": non_negotiable_stats,
+            "secondary_stats": secondary_stats,
+            "fun_stats": fun_stats,
+            "subtask_stats": subtask_stats,
+            "prayer_stats": prayer_stats,
+            "prayer_breakdown": prayer_breakdown,
+            "non_negotiable_daily": non_negotiable_daily,
+            "secondary_daily": secondary_daily,
+            "fun_daily": fun_daily,
+            "subtask_daily": subtask_daily,
+            "prayer_daily": prayer_daily,
+        }
+
+    # Add category-specific filtering
+    if category != "all" and view_type != "prayers" and view_type != "subtasks":
+        if category == "non_negotiable":
+            context_stats = {
+                "non_negotiable_stats": non_negotiable_stats,
+                "non_negotiable_daily": non_negotiable_daily,
+            }
+        elif category == "secondary":
+            context_stats = {
+                "secondary_stats": secondary_stats,
+                "secondary_daily": secondary_daily,
+            }
+        elif category == "fun":
+            context_stats = {
+                "fun_stats": fun_stats,
+                "fun_daily": fun_daily,
+            }
+
     context = {
         "filter_type": filter_type,
+        "view_type": view_type,
+        "category": category,
         "start_date": start_date,
         "end_date": end_date,
         "period": f"{start_date.strftime('%b %d')} - {end_date.strftime('%b %d, %Y')}",
-        "non_negotiable_stats": non_negotiable_stats,
-        "secondary_stats": secondary_stats,
-        "fun_stats": fun_stats,
-        "subtask_stats": subtask_stats,
-        "prayer_stats": prayer_stats,
-        "prayer_breakdown": prayer_breakdown,
-        "non_negotiable_daily": non_negotiable_daily,
-        "secondary_daily": secondary_daily,
-        "fun_daily": fun_daily,
-        "subtask_daily": subtask_daily,
-        "prayer_daily": prayer_daily,
         "alerts": alerts,
     }
+    context.update(context_stats)
 
     return render(request, "admin/scheduler/analytics_dashboard.html", context)
 

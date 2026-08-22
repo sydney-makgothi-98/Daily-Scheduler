@@ -51,7 +51,7 @@
             margin-bottom: 2rem;
         "></p>
 
-        <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem;">
+        <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; flex-wrap: wrap;">
             <!-- Completed Button -->
             <button id="prayerCompleteBtn" class="btn btn-success" style="
                 font-size: 1.125rem;
@@ -68,7 +68,25 @@
             </button>
 
             <!-- Not Completed Button -->
-            <button id="prayerNotCompleteBtn" class="btn btn-danger" style="
+            <button id="prayerNotCompleteBtn" class="btn btn-warning" style="
+                font-size: 1.125rem;
+                padding: 0.75rem 2rem;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                transition: all 0.3s ease;
+                border: none;
+                cursor: pointer;
+                background: rgba(245, 158, 11, 0.2);
+                color: #f59e0b;
+                border: 1px solid #f59e0b;
+            ">
+                <span style="display: inline-block; font-size: 1.5rem;">⏳</span>
+                <span>Not Yet</span>
+            </button>
+
+            <!-- Missed Button -->
+            <button id="prayerMissedBtn" class="btn btn-danger" style="
                 font-size: 1.125rem;
                 padding: 0.75rem 2rem;
                 display: inline-flex;
@@ -79,7 +97,7 @@
                 cursor: pointer;
             ">
                 <span style="display: inline-block; font-size: 1.5rem;">✕</span>
-                <span>Not Yet</span>
+                <span>Missed</span>
             </button>
         </div>
 
@@ -555,6 +573,7 @@ const prayerModalName = document.getElementById('prayerModalName');
 const prayerModalTime = document.getElementById('prayerModalTime');
 const prayerCompleteBtn = document.getElementById('prayerCompleteBtn');
 const prayerNotCompleteBtn = document.getElementById('prayerNotCompleteBtn');
+const prayerMissedBtn = document.getElementById('prayerMissedBtn');
 const closePrayerModalBtn = document.getElementById('closePrayerModalBtn');
 
 function openTaskDetail(taskId) {
@@ -835,13 +854,19 @@ modal.addEventListener('click', function(e) {
 prayerCompleteBtn.addEventListener('click', function(e) {
     e.preventDefault();
     e.stopPropagation();
-    markPrayerComplete(true);
+    markPrayerComplete(true, 'prayed');
 });
 
 prayerNotCompleteBtn.addEventListener('click', function(e) {
     e.preventDefault();
     e.stopPropagation();
-    markPrayerComplete(false);
+    markPrayerComplete(false, 'not_yet');
+});
+
+prayerMissedBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    markPrayerComplete(false, 'missed');
 });
 
 closePrayerModalBtn.addEventListener('click', function(e) {
@@ -942,13 +967,15 @@ function closePrayerModal() {
     currentPrayerName = null;
 }
 
-function markPrayerComplete(isCompleted) {
+function markPrayerComplete(isCompleted, status) {
     if (!currentPrayerName) return;
 
     prayerCompleteBtn.disabled = true;
     prayerNotCompleteBtn.disabled = true;
+    prayerMissedBtn.disabled = true;
     prayerCompleteBtn.style.opacity = '0.7';
     prayerNotCompleteBtn.style.opacity = '0.7';
+    prayerMissedBtn.style.opacity = '0.7';
 
     fetch(`/api/prayers/${currentPrayerName}/toggle/`, {
         method: 'POST',
@@ -964,8 +991,14 @@ function markPrayerComplete(isCompleted) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
+            const messages = {
+                'prayed': 'Prayer marked as completed',
+                'not_yet': 'Prayer marked as not done yet',
+                'missed': 'Prayer marked as missed'
+            };
+
             window.showToast(
-                `Prayer marked as ${isCompleted ? 'completed' : 'incomplete'}`,
+                messages[status] || 'Prayer status updated',
                 'success',
                 2000
             );
@@ -984,8 +1017,10 @@ function markPrayerComplete(isCompleted) {
 
         prayerCompleteBtn.disabled = false;
         prayerNotCompleteBtn.disabled = false;
+        prayerMissedBtn.disabled = false;
         prayerCompleteBtn.style.opacity = '1';
         prayerNotCompleteBtn.style.opacity = '1';
+        prayerMissedBtn.style.opacity = '1';
     });
 }
 

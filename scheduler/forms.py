@@ -2,7 +2,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from scheduler.models import PersonalTask, TaskCategory
+from scheduler.models import PersonalTask, TaskCategory, SubTask, PrayerCompletion
 
 
 class PersonalTaskForm(forms.ModelForm):
@@ -82,3 +82,48 @@ class PersonalTaskForm(forms.ModelForm):
                 )
 
         return cleaned_data
+
+
+class SubTaskForm(forms.ModelForm):
+    class Meta:
+        model = SubTask
+        fields = ["title", "is_completed", "order"]
+        widgets = {
+            "title": forms.TextInput(attrs={
+                "class": "form-input",
+                "placeholder": "Sub-task title",
+                "required": True,
+            }),
+            "is_completed": forms.CheckboxInput(attrs={
+                "class": "form-checkbox",
+            }),
+            "order": forms.NumberInput(attrs={
+                "class": "form-input",
+                "type": "number",
+                "min": "0",
+            }),
+        }
+
+
+class PrayerCompletionForm(forms.ModelForm):
+    class Meta:
+        model = PrayerCompletion
+        fields = ["prayer_name", "date", "is_completed", "completed_at"]
+        widgets = {
+            "prayer_name": forms.Select(attrs={
+                "class": "form-select",
+                "required": True,
+            }),
+            "date": forms.DateInput(attrs={
+                "class": "form-input",
+                "type": "date",
+                "required": True,
+            }),
+            "is_completed": forms.CheckboxInput(attrs={
+                "class": "form-checkbox",
+            }),
+            "completed_at": forms.DateTimeInput(attrs={
+                "class": "form-input",
+                "type": "datetime-local",
+            }),
+        }

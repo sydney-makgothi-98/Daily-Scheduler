@@ -29,6 +29,9 @@ urlpatterns += [
     path("prayers/create/", views.create_prayer, name="create_prayer"),
     path("prayers/<int:prayer_id>/update/", views.update_prayer, name="update_prayer"),
     path("prayers/<int:prayer_id>/delete/", views.delete_prayer, name="delete_prayer"),
+    path("api/prayers/<str:prayer_name>/toggle/", views.toggle_prayer_completion, name="toggle_prayer"),
+    path("api/prayers/<int:year>/<int:month>/<int:day>/", views.get_daily_prayer_completions, name="get_daily_prayers"),
+    path("api/prayers/stats/", views.get_prayer_stats, name="prayer_stats_api"),
 ]
 
 urlpatterns += [
@@ -38,10 +41,16 @@ urlpatterns += [
     path("tasks/<int:task_id>/edit/", views.edit_personal_task, name="edit_personal_task"),
     path("tasks/<int:task_id>/delete/", views.delete_personal_task, name="delete_personal_task"),
     path("api/tasks/<int:task_id>/toggle/", views.toggle_task_completion, name="toggle_task_completion"),
+    path("api/tasks/<int:task_id>/subtasks/", views.create_subtask, name="create_subtask"),
+    path("api/tasks/<int:task_id>/subtasks-list/", views.get_task_subtasks, name="get_task_subtasks"),
+    path("api/subtasks/<int:subtask_id>/toggle/", views.toggle_subtask_completion, name="toggle_subtask"),
+    path("api/subtasks/<int:subtask_id>/delete/", views.delete_subtask, name="delete_subtask"),
     path("api/tasks/<int:year>/<int:month>/<int:day>/", views.get_tasks_by_date_api, name="get_tasks_api"),
 ]
 
 urlpatterns += [
     path("analytics/", views.analytics_dashboard, name="analytics_dashboard"),
     path("api/analytics/chart-data/", views.get_chart_data_api, name="get_chart_data_api"),
+    path("api/analytics/subtask-chart-data/", views.get_subtask_chart_data_api, name="get_subtask_chart_data_api"),
+    path("api/analytics/prayer-chart-data/", views.get_prayer_chart_data_api, name="get_prayer_chart_data_api"),
 ]

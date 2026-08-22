@@ -60,6 +60,31 @@ class PersonalTask(models.Model):
     def __str__(self) -> str:
         return f"{self.title} ({self.date} {self.start_time})"
 
+    def get_performance_rating(self):
+        """Calculate performance rating based on subtask completion percentage"""
+        subtasks = self.subtasks.all()
+        if not subtasks.exists():
+            return {"rating": "N/A", "percentage": 0, "label": "No subtasks"}
+
+        completed = subtasks.filter(is_completed=True).count()
+        total = subtasks.count()
+        percentage = (completed / total) * 100
+
+        if percentage == 0:
+            return {"rating": "0%", "percentage": 0, "label": "No Performance", "emoji": "❌"}
+        elif percentage < 50:
+            return {"rating": f"{percentage:.0f}%", "percentage": percentage, "label": "Poor Performance", "emoji": "⚠️"}
+        elif percentage < 60:
+            return {"rating": "50%", "percentage": 50, "label": "Average Performance", "emoji": "📊"}
+        elif percentage < 70:
+            return {"rating": "60%", "percentage": 60, "label": "Above Average", "emoji": "👍"}
+        elif percentage < 80:
+            return {"rating": "70%", "percentage": percentage, "label": "Fairly Successful", "emoji": "😊"}
+        elif percentage < 90:
+            return {"rating": "80%", "percentage": percentage, "label": "Excellent", "emoji": "⭐"}
+        else:
+            return {"rating": "90%+", "percentage": 100, "label": "Fully Successful", "emoji": "🏆"}
+
 
 class PrayerName(models.TextChoices):
     FAJR = "fajr", _("Fajr")
@@ -97,6 +122,44 @@ class PrayerSchedule(models.Model):
         return f"{self.get_prayer_name_display()} ({self.start_time} - {self.end_time})"
 
 
+class SubTask(models.Model):
+    personal_task = models.ForeignKey(
+        PersonalTask,
+        on_delete=models.CASCADE,
+        related_name="subtasks",
+        help_text=_("Parent task")
+    )
+    title = models.CharField(
+        _("title"),
+        max_length=255,
+        help_text=_("Subtask title")
+    )
+    is_completed = models.BooleanField(
+        _("is completed"),
+        default=False,
+        help_text=_("Whether the subtask is completed")
+    )
+    order = models.PositiveIntegerField(
+        _("order"),
+        default=0,
+        help_text=_("Order of subtask within parent task")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order"]
+        verbose_name = _("Sub-Task")
+        verbose_name_plural = _("Sub-Tasks")
+        indexes = [
+            models.Index(fields=["personal_task", "order"]),
+        ]
+
+    def __str__(self) -> str:
+        status = "✓" if self.is_completed else "○"
+        return f"{status} {self.title}"
+
+
 class TaskCompletion(models.Model):
     task = models.ForeignKey(
         PersonalTask,
@@ -113,6 +176,13 @@ class TaskCompletion(models.Model):
         auto_now_add=True,
         help_text=_("When the completion status was recorded")
     )
+    performance_rating = models.CharField(
+        _("performance rating"),
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text=_("Performance rating based on subtask completion percentage")
+    )
 
     class Meta:
         verbose_name = _("Task Completion")
@@ -124,4 +194,45 @@ class TaskCompletion(models.Model):
 
     def __str__(self) -> str:
         status = "✓ Completed" if self.is_completed else "✗ Not Completed"
-        return f"{self.task.title} - {status} ({self.completed_at})"
+        rating = f" - {self.performance_rating}" if self.performance_rating else ""
+        return f"{self.task.title} - {status}{rating} ({self.completed_at})"
+
+
+class PrayerCompletion(models.Model):
+    prayer_name = models.CharField(
+        _("prayer name"),
+        max_length=20,
+        choices=PrayerName.choices,
+        help_text=_("Name of the prayer")
+    )
+    date = models.DateField(
+        _("date"),
+        help_text=_("Date of completion record")
+    )
+    is_completed = models.BooleanField(
+        _("is completed"),
+        default=False,
+        help_text=_("Whether the prayer was completed")
+    )
+    completed_at = models.DateTimeField(
+        _("completed at"),
+        blank=True,
+        null=True,
+        help_text=_("When the prayer was completed")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("Prayer Completion")
+        verbose_name_plural = _("Prayer Completions")
+        ordering = ["-date", "prayer_name"]
+        unique_together = ["prayer_name", "date"]
+        indexes = [
+            models.Index(fields=["date"]),
+            models.Index(fields=["prayer_name", "date"]),
+        ]
+
+    def __str__(self) -> str:
+        status = "✓" if self.is_completed else "✗"
+        return f"{status} {self.get_prayer_name_display()} ({self.date})"

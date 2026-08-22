@@ -5,9 +5,10 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib import messages
 from django.utils import timezone
+from django.db import models
 import json
 
-from scheduler.models import PersonalTask, PrayerSchedule, TaskCategory, TaskCompletion
+from scheduler.models import PersonalTask, PrayerSchedule, TaskCategory, TaskCompletion, SubTask, PrayerCompletion, PrayerName
 from scheduler.forms import PersonalTaskForm
 
 
@@ -252,17 +253,143 @@ def toggle_task_completion(request, task_id):
         task.is_completed = is_completed
         task.save()
 
-        # Record completion in history
+        # Calculate performance rating
+        performance_data = task.get_performance_rating()
+        performance_rating = performance_data.get("label", "N/A")
+
+        # Record completion in history with performance rating
         TaskCompletion.objects.create(
             task=task,
-            is_completed=is_completed
+            is_completed=is_completed,
+            performance_rating=performance_rating
         )
+
+        # Get all subtasks for response
+        subtasks = task.subtasks.all().values("id", "title", "is_completed")
 
         return JsonResponse({
             "success": True,
             "task_id": task.id,
             "is_completed": task.is_completed,
+            "performance_rating": performance_rating,
+            "performance_data": performance_data,
+            "subtasks": list(subtasks),
             "message": f"Task marked as {'completed' if is_completed else 'incomplete'}"
+        })
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_subtask(request, task_id):
+    """Create a subtask for a personal task via AJAX"""
+    task = get_object_or_404(PersonalTask, id=task_id)
+
+    try:
+        data = json.loads(request.body)
+        title = data.get("title", "").strip()
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    if not title:
+        return JsonResponse({"error": "Subtask title is required"}, status=400)
+
+    try:
+        # Get the maximum order number for this task
+        max_order = task.subtasks.aggregate(models.Max("order"))["order__max"] or 0
+
+        subtask = SubTask.objects.create(
+            personal_task=task,
+            title=title,
+            order=max_order + 1
+        )
+
+        return JsonResponse({
+            "success": True,
+            "subtask_id": subtask.id,
+            "title": subtask.title,
+            "is_completed": subtask.is_completed,
+            "order": subtask.order,
+            "message": "Subtask created successfully"
+        })
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def toggle_subtask_completion(request, subtask_id):
+    """Toggle subtask completion status via AJAX"""
+    subtask = get_object_or_404(SubTask, id=subtask_id)
+
+    try:
+        data = json.loads(request.body)
+        is_completed = data.get("is_completed", False)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    try:
+        subtask.is_completed = is_completed
+        subtask.save()
+
+        # Get updated performance rating for parent task
+        task = subtask.personal_task
+        performance_data = task.get_performance_rating()
+
+        return JsonResponse({
+            "success": True,
+            "subtask_id": subtask.id,
+            "is_completed": subtask.is_completed,
+            "task_id": task.id,
+            "performance_data": performance_data,
+            "message": f"Subtask marked as {'completed' if is_completed else 'incomplete'}"
+        })
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def delete_subtask(request, subtask_id):
+    """Delete a subtask via AJAX"""
+    subtask = get_object_or_404(SubTask, id=subtask_id)
+    task_id = subtask.personal_task.id
+
+    try:
+        subtask.delete()
+
+        # Get updated performance rating
+        task = PersonalTask.objects.get(id=task_id)
+        performance_data = task.get_performance_rating()
+
+        return JsonResponse({
+            "success": True,
+            "subtask_id": subtask_id,
+            "task_id": task_id,
+            "performance_data": performance_data,
+            "message": "Subtask deleted successfully"
+        })
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_task_subtasks(request, task_id):
+    """Get all subtasks for a task via AJAX"""
+    task = get_object_or_404(PersonalTask, id=task_id)
+
+    try:
+        subtasks = task.subtasks.all().values("id", "title", "is_completed", "order")
+        performance_data = task.get_performance_rating()
+
+        return JsonResponse({
+            "success": True,
+            "task_id": task_id,
+            "subtasks": list(subtasks),
+            "performance_data": performance_data,
+            "subtask_count": len(list(subtasks))
         })
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)}, status=500)

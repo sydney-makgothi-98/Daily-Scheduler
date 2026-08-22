@@ -1118,7 +1118,10 @@ function displayPrayers(prayers, dateStr) {
 }
 
 function togglePrayerCompletion(prayerName, dateStr, isCompleted) {
-    fetch(`/api/prayers/${prayerName}/toggle/`, {
+    const url = `/api/prayers/${prayerName}/toggle/`;
+    console.log('Toggling prayer:', { prayerName, dateStr, isCompleted, url });
+
+    fetch(url, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -1129,13 +1132,27 @@ function togglePrayerCompletion(prayerName, dateStr, isCompleted) {
             is_completed: isCompleted
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Prayer toggle response status:', response.status);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
     .then(data => {
+        console.log('Prayer toggle response data:', data);
         if (data.success) {
+            window.showToast(`Prayer marked as ${isCompleted ? 'completed' : 'incomplete'}`, 'success', 2000);
             loadPrayerCompletions();
+        } else {
+            window.showToast('Error: ' + (data.error || 'Unknown error'), 'error', 3000);
+            console.error('Prayer toggle failed:', data.error);
         }
     })
-    .catch(error => console.error('Error toggling prayer:', error));
+    .catch(error => {
+        console.error('Error toggling prayer:', error);
+        window.showToast('Failed to update prayer: ' + error.message, 'error', 4000);
+    });
 }
 
 function updatePrayerStats(completed, total) {

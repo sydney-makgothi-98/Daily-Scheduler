@@ -92,8 +92,14 @@ def task_data_view(request, year, month, day):
     # Create timeline items (tasks + prayers)
     timeline_items = []
 
-    # Add prayers
+    # Add prayers with completion status
     for prayer in prayers:
+        # Check if prayer was completed today
+        prayer_completion = PrayerCompletion.objects.filter(
+            prayer_name=prayer.prayer_name,
+            date=date
+        ).first()
+
         timeline_items.append({
             "type": "prayer",
             "name": prayer.get_prayer_name_display(),
@@ -101,6 +107,7 @@ def task_data_view(request, year, month, day):
             "start_time": prayer.start_time,
             "end_time": prayer.end_time,
             "icon": "🕌",
+            "is_completed": prayer_completion.is_completed if prayer_completion else False,
         })
 
     # Add tasks

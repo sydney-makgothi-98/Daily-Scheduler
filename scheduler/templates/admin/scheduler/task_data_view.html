@@ -4,6 +4,89 @@
 
 {% block content %}
 
+<!-- Prayer Completion Modal -->
+<div id="prayerModal" style="
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    padding: 1rem;
+">
+    <div style="
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(10, 14, 39, 0.95) 100%);
+        border: 1px solid rgba(124, 58, 237, 0.3);
+        border-radius: 16px;
+        padding: 2rem;
+        max-width: 500px;
+        width: 100%;
+        text-align: center;
+        animation: slideUp 0.3s ease;
+    ">
+        <h3 style="
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #f8fafc;
+            margin-bottom: 0.5rem;
+        ">
+            🕌 Prayer Time
+        </h3>
+
+        <p id="prayerModalName" style="
+            font-size: 1.125rem;
+            color: #a78bfa;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        "></p>
+
+        <p id="prayerModalTime" style="
+            font-size: 0.875rem;
+            color: #cbd5e1;
+            margin-bottom: 2rem;
+        "></p>
+
+        <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem;">
+            <!-- Completed Button -->
+            <button id="prayerCompleteBtn" class="btn btn-success" style="
+                font-size: 1.125rem;
+                padding: 0.75rem 2rem;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                transition: all 0.3s ease;
+                border: none;
+                cursor: pointer;
+            ">
+                <span style="display: inline-block; font-size: 1.5rem;">✓</span>
+                <span>Prayed</span>
+            </button>
+
+            <!-- Not Completed Button -->
+            <button id="prayerNotCompleteBtn" class="btn btn-danger" style="
+                font-size: 1.125rem;
+                padding: 0.75rem 2rem;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                transition: all 0.3s ease;
+                border: none;
+                cursor: pointer;
+            ">
+                <span style="display: inline-block; font-size: 1.5rem;">✕</span>
+                <span>Not Yet</span>
+            </button>
+        </div>
+
+        <button id="closePrayerModalBtn" class="btn btn-secondary" style="width: 100%;">Cancel</button>
+    </div>
+</div>
+
 <!-- Completion Modal -->
 <div id="completionModal" style="
     display: none;
@@ -323,7 +406,12 @@
                     onmouseover="this.style.borderColor='rgba(124, 58, 237, 0.6)'; this.style.background='rgba(0, 0, 0, 0.3)';"
                     onmouseout="this.style.borderColor='{% if item.is_completed %}rgba(16, 185, 129, 0.3){% else %}rgba(124, 58, 237, 0.3){% endif %}'; this.style.background='{% if item.is_completed %}rgba(16, 185, 129, 0.1){% else %}rgba(0, 0, 0, 0.2){% endif %}';"
                 {% else %}
-                    style="background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(124, 58, 237, 0.3); border-radius: 8px; padding: 1rem; transition: all 0.3s ease;"
+                    data-prayer-name="{{ item.prayer_name }}"
+                    data-date="{{ date|date:'Y-m-d' }}"
+                    onclick="openPrayerDetail('{{ item.prayer_name }}')"
+                    style="cursor: pointer; background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(124, 58, 237, 0.3); border-radius: 8px; padding: 1rem; transition: all 0.3s ease;"
+                    onmouseover="this.style.borderColor='rgba(167, 139, 250, 0.6)'; this.style.background='rgba(167, 139, 250, 0.15)';"
+                    onmouseout="this.style.borderColor='rgba(124, 58, 237, 0.3)'; this.style.background='rgba(0, 0, 0, 0.2)';"
                 {% endif %}
                 >
                     <div style="display: flex; justify-content: space-between; align-items: start; gap: 1rem;">
@@ -351,6 +439,7 @@
                                 align-items: center;
                                 font-size: 0.875rem;
                                 color: #cbd5e1;
+                                flex-wrap: wrap;
                             ">
                                 <span>🕐 {{ item.start_time|time:"H:i" }} - {{ item.end_time|time:"H:i" }}</span>
                                 {% if item.type == 'task' %}
@@ -358,6 +447,10 @@
                                     {% if item.is_completed %}✓ Done{% else %}⏳ Pending{% endif %}
                                 </span>
                                 <span class="status-badge info">{{ item.category_display }}</span>
+                                {% else %}
+                                <span class="status-badge {% if item.is_completed %}active{% else %}pending{% endif %}" data-prayer-status="{{ item.prayer_name }}">
+                                    {% if item.is_completed %}✓ Done{% else %}⏳ Not Done{% endif %}
+                                </span>
                                 {% endif %}
                             </div>
                         </div>
@@ -446,6 +539,8 @@
 <script>
 let currentTaskId = null;
 let currentTaskTitle = null;
+let currentPrayerName = null;
+let currentDate = '{{ date|date:"Y-m-d" }}';
 
 const modal = document.getElementById('completionModal');
 const modalTaskTitle = document.getElementById('modalTaskTitle');
@@ -454,6 +549,13 @@ const completeNoBtn = document.getElementById('completeNoBtn');
 const closeModalBtn = document.getElementById('closeModalBtn');
 const yesCheckmark = document.getElementById('yesCheckmark');
 const noX = document.getElementById('noX');
+
+const prayerModal = document.getElementById('prayerModal');
+const prayerModalName = document.getElementById('prayerModalName');
+const prayerModalTime = document.getElementById('prayerModalTime');
+const prayerCompleteBtn = document.getElementById('prayerCompleteBtn');
+const prayerNotCompleteBtn = document.getElementById('prayerNotCompleteBtn');
+const closePrayerModalBtn = document.getElementById('closePrayerModalBtn');
 
 function openTaskDetail(taskId) {
     // Find task element and title
@@ -729,6 +831,31 @@ modal.addEventListener('click', function(e) {
     }
 }, { capture: false });
 
+// Prayer modal event listeners
+prayerCompleteBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    markPrayerComplete(true);
+});
+
+prayerNotCompleteBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    markPrayerComplete(false);
+});
+
+closePrayerModalBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    closePrayerModal();
+});
+
+prayerModal.addEventListener('click', function(e) {
+    if (e.target === prayerModal) {
+        closePrayerModal();
+    }
+}, { capture: false });
+
 // Keyboard shortcuts and navigation
 document.addEventListener('keydown', (e) => {
     if (modal.style.display === 'flex') {
@@ -778,6 +905,89 @@ document.addEventListener('DOMContentLoaded', function() {
         modal.querySelector('button.btn-secondary').insertAdjacentElement('afterend', hint);
     }
 });
+
+// Prayer modal functions
+function openPrayerDetail(prayerName) {
+    currentPrayerName = prayerName;
+
+    // Get prayer display name and time
+    const prayerDisplayNames = {
+        'fajr': 'Fajr',
+        'zhor': 'Zhor',
+        'asr': 'Asr',
+        'magrib': 'Magrib',
+        'eisha': 'Eisha'
+    };
+
+    // Find prayer time from timeline items
+    const timelineItems = document.querySelectorAll('[data-prayer-name]');
+    let prayerTime = '';
+
+    timelineItems.forEach(item => {
+        if (item.getAttribute('data-prayer-name') === prayerName) {
+            const timeSpan = item.querySelector('span');
+            if (timeSpan && timeSpan.textContent.includes(':')) {
+                prayerTime = timeSpan.textContent.trim();
+            }
+        }
+    });
+
+    prayerModalName.textContent = prayerDisplayNames[prayerName] || prayerName;
+    prayerModalTime.textContent = prayerTime || 'Time not found';
+    prayerModal.style.display = 'flex';
+}
+
+function closePrayerModal() {
+    prayerModal.style.display = 'none';
+    currentPrayerName = null;
+}
+
+function markPrayerComplete(isCompleted) {
+    if (!currentPrayerName) return;
+
+    prayerCompleteBtn.disabled = true;
+    prayerNotCompleteBtn.disabled = true;
+    prayerCompleteBtn.style.opacity = '0.7';
+    prayerNotCompleteBtn.style.opacity = '0.7';
+
+    fetch(`/api/prayers/${currentPrayerName}/toggle/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            date: currentDate,
+            is_completed: isCompleted
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.showToast(
+                `Prayer marked as ${isCompleted ? 'completed' : 'incomplete'}`,
+                'success',
+                2000
+            );
+
+            setTimeout(() => {
+                closePrayerModal();
+                loadPrayerCompletions();
+            }, 600);
+        } else {
+            throw new Error(data.error || 'Unknown error');
+        }
+    })
+    .catch(error => {
+        console.error('Error marking prayer complete:', error);
+        window.showToast('Failed to update prayer status: ' + error.message, 'error', 4000);
+
+        prayerCompleteBtn.disabled = false;
+        prayerNotCompleteBtn.disabled = false;
+        prayerCompleteBtn.style.opacity = '1';
+        prayerNotCompleteBtn.style.opacity = '1';
+    });
+}
 
 // Prayer tracking functionality
 function loadPrayerCompletions() {

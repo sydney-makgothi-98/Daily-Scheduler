@@ -18,6 +18,7 @@
     justify-content: center;
     align-items: center;
     padding: 1rem;
+    flex-direction: column;
 ">
     <div style="
         background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(10, 14, 39, 0.95) 100%);
@@ -221,7 +222,7 @@
             </div>
         </div>
 
-        <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem;">
+        <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; flex-wrap: wrap;">
             <!-- Yes Button -->
             <button id="completeYesBtn" class="btn btn-success" style="
                 font-size: 1.125rem;
@@ -250,6 +251,51 @@
             ">
                 <span id="noX" style="display: inline-block; font-size: 1.5rem;">✕</span>
                 <span id="noText">No</span>
+            </button>
+        </div>
+
+        <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; flex-wrap: wrap;">
+            <!-- Edit Button -->
+            <a id="editTaskBtn" href="#" class="btn" style="
+                font-size: 1rem;
+                padding: 0.75rem 1.5rem;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                transition: all 0.3s ease;
+                border: 1px solid rgba(124, 58, 237, 0.5);
+                cursor: pointer;
+                background: rgba(124, 58, 237, 0.2);
+                color: #a78bfa;
+                text-decoration: none;
+                border-radius: 8px;
+            "
+            onmouseover="this.style.background='rgba(124, 58, 237, 0.3)'"
+            onmouseout="this.style.background='rgba(124, 58, 237, 0.2)'"
+            >
+                <span style="font-size: 1.25rem;">✏️</span>
+                <span>Edit</span>
+            </a>
+
+            <!-- Delete Button -->
+            <button id="deleteTaskBtn" class="btn" style="
+                font-size: 1rem;
+                padding: 0.75rem 1.5rem;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                transition: all 0.3s ease;
+                border: 1px solid rgba(239, 68, 68, 0.5);
+                cursor: pointer;
+                background: rgba(239, 68, 68, 0.2);
+                color: #ef4444;
+                border-radius: 8px;
+            "
+            onmouseover="this.style.background='rgba(239, 68, 68, 0.3)'"
+            onmouseout="this.style.background='rgba(239, 68, 68, 0.2)'"
+            >
+                <span style="font-size: 1.25rem;">🗑️</span>
+                <span>Delete</span>
             </button>
         </div>
 
@@ -729,7 +775,10 @@ function markTaskComplete(isCompleted) {
     // Animate button
     icon.style.animation = isCompleted ? 'checkmarkAnimation 0.6s ease' : 'xAnimation 0.6s ease';
 
-    // Send AJAX request
+    // Send AJAX request with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     fetch(`/api/tasks/${currentTaskId}/toggle/`, {
         method: 'POST',
         headers: {
@@ -738,9 +787,11 @@ function markTaskComplete(isCompleted) {
         },
         body: JSON.stringify({
             is_completed: isCompleted
-        })
+        }),
+        signal: controller.signal
     })
     .then(response => {
+        clearTimeout(timeoutId);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
     })
@@ -765,12 +816,21 @@ function markTaskComplete(isCompleted) {
         }
     })
     .catch(error => {
+        clearTimeout(timeoutId);
         console.error('Error marking task complete:', error);
         console.error('Task ID:', currentTaskId);
         console.error('Is Completed:', isCompleted);
         window.showToast('Failed to update task status: ' + error.message, 'error', 4000);
 
         // Reset buttons
+        completeYesBtn.disabled = false;
+        completeNoBtn.disabled = false;
+        btn.style.opacity = '1';
+        textSpan.textContent = isCompleted ? 'Yes' : 'No';
+        icon.style.animation = 'none';
+    })
+    .finally(() => {
+        // Always re-enable buttons when the request completes (success or failure)
         completeYesBtn.disabled = false;
         completeNoBtn.disabled = false;
         btn.style.opacity = '1';
@@ -840,6 +900,36 @@ closeModalBtn.addEventListener('click', function(e) {
     e.preventDefault();
     e.stopPropagation();
     closeModal();
+});
+
+// Edit task button
+document.getElementById('editTaskBtn').addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (currentTaskId) {
+        window.location.href = `/tasks/${currentTaskId}/edit/`;
+    }
+});
+
+// Delete task button
+document.getElementById('deleteTaskBtn').addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (currentTaskId && confirm(`Delete task "${currentTaskTitle}"?`)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/tasks/${currentTaskId}/delete/`;
+
+        // Add CSRF token
+        const csrfToken = document.createElement('input');
+        csrfToken.type = 'hidden';
+        csrfToken.name = 'csrfmiddlewaretoken';
+        csrfToken.value = getCookie('csrftoken');
+        form.appendChild(csrfToken);
+
+        document.body.appendChild(form);
+        form.submit();
+    }
 });
 
 // Close modal when clicking outside (on the background)
@@ -933,33 +1023,45 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Prayer modal functions
 function openPrayerDetail(prayerName) {
-    currentPrayerName = prayerName;
+    try {
+        currentPrayerName = prayerName;
+        console.log('Opening prayer detail for:', prayerName);
 
-    // Get prayer display name and time
-    const prayerDisplayNames = {
-        'fajr': 'Fajr',
-        'zhor': 'Zhor',
-        'asr': 'Asr',
-        'magrib': 'Magrib',
-        'eisha': 'Eisha'
-    };
+        // Get prayer display name and time
+        const prayerDisplayNames = {
+            'fajr': 'Fajr',
+            'zhor': 'Zhor',
+            'asr': 'Asr',
+            'magrib': 'Magrib',
+            'eisha': 'Eisha'
+        };
 
-    // Find prayer time from timeline items
-    const timelineItems = document.querySelectorAll('[data-prayer-name]');
-    let prayerTime = '';
+        // Find prayer time from timeline items
+        const timelineItems = document.querySelectorAll('[data-prayer-name]');
+        let prayerTime = '';
 
-    timelineItems.forEach(item => {
-        if (item.getAttribute('data-prayer-name') === prayerName) {
-            const timeSpan = item.querySelector('span');
-            if (timeSpan && timeSpan.textContent.includes(':')) {
-                prayerTime = timeSpan.textContent.trim();
+        timelineItems.forEach(item => {
+            if (item.getAttribute('data-prayer-name') === prayerName) {
+                const timeSpan = item.querySelector('span');
+                if (timeSpan && timeSpan.textContent.includes(':')) {
+                    prayerTime = timeSpan.textContent.trim();
+                }
             }
-        }
-    });
+        });
 
-    prayerModalName.textContent = prayerDisplayNames[prayerName] || prayerName;
-    prayerModalTime.textContent = prayerTime || 'Time not found';
-    prayerModal.style.display = 'flex';
+        prayerModalName.textContent = prayerDisplayNames[prayerName] || prayerName;
+        prayerModalTime.textContent = prayerTime || 'Time not found';
+
+        if (!prayerModal) {
+            console.error('Prayer modal not found in DOM!');
+            return;
+        }
+
+        prayerModal.style.display = 'flex';
+        console.log('Prayer modal displayed successfully');
+    } catch (error) {
+        console.error('Error opening prayer detail:', error);
+    }
 }
 
 function closePrayerModal() {
@@ -968,16 +1070,29 @@ function closePrayerModal() {
 }
 
 function markPrayerComplete(isCompleted, status) {
-    if (!currentPrayerName) return;
+    try {
+        console.log('markPrayerComplete called:', { currentPrayerName, isCompleted, status });
 
-    prayerCompleteBtn.disabled = true;
-    prayerNotCompleteBtn.disabled = true;
-    prayerMissedBtn.disabled = true;
-    prayerCompleteBtn.style.opacity = '0.7';
-    prayerNotCompleteBtn.style.opacity = '0.7';
-    prayerMissedBtn.style.opacity = '0.7';
+        if (!currentPrayerName) {
+            console.error('currentPrayerName is not set!');
+            return;
+        }
 
-    fetch(`/api/prayers/${currentPrayerName}/toggle/`, {
+        if (!prayerCompleteBtn || !prayerNotCompleteBtn || !prayerMissedBtn) {
+            console.error('Prayer buttons not found in DOM!', { prayerCompleteBtn, prayerNotCompleteBtn, prayerMissedBtn });
+            return;
+        }
+
+        prayerCompleteBtn.disabled = true;
+        prayerNotCompleteBtn.disabled = true;
+        prayerMissedBtn.disabled = true;
+        prayerCompleteBtn.style.opacity = '0.7';
+        prayerNotCompleteBtn.style.opacity = '0.7';
+        prayerMissedBtn.style.opacity = '0.7';
+
+        console.log('Sending fetch request to /api/prayers/' + currentPrayerName + '/toggle/');
+
+        fetch(`/api/prayers/${currentPrayerName}/toggle/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -985,7 +1100,8 @@ function markPrayerComplete(isCompleted, status) {
         },
         body: JSON.stringify({
             date: currentDate,
-            is_completed: isCompleted
+            is_completed: isCompleted,
+            status: status
         })
     })
     .then(response => response.json())
@@ -1021,22 +1137,32 @@ function markPrayerComplete(isCompleted, status) {
         prayerCompleteBtn.style.opacity = '1';
         prayerNotCompleteBtn.style.opacity = '1';
         prayerMissedBtn.style.opacity = '1';
+    })
+    .finally(() => {
+        // Always re-enable buttons when the request completes (success or failure)
+        prayerCompleteBtn.disabled = false;
+        prayerNotCompleteBtn.disabled = false;
+        prayerMissedBtn.disabled = false;
+        prayerCompleteBtn.style.opacity = '1';
+        prayerNotCompleteBtn.style.opacity = '1';
+        prayerMissedBtn.style.opacity = '1';
     });
+    } catch (error) {
+        console.error('Unexpected error in markPrayerComplete:', error);
+        window.showToast('Unexpected error: ' + error.message, 'error', 4000);
+    }
 }
 
 // Prayer tracking functionality
 function loadPrayerCompletions() {
-    const date = new Date('{{ date }}');
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}`;
+    // Use currentDate which is already set correctly
+    const [year, month, day] = currentDate.split('-');
 
-    fetch(`/api/prayers/${year}/${month.replace(/^0/, '')}/${day.replace(/^0/, '')}/`)
+    fetch(`/api/prayers/${year}/${parseInt(month)}/${parseInt(day)}/`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                displayPrayers(data.prayers, dateStr);
+                displayPrayers(data.prayers, currentDate);
                 updatePrayerStats(data.completed_prayers, data.total_prayers);
             }
         })
@@ -1115,11 +1241,75 @@ function displayPrayers(prayers, dateStr) {
 
         prayersList.appendChild(prayerCard);
     });
+
+    // Update timeline items with new prayer status
+    updateTimelinePrayerStatus(prayers);
+}
+
+function updateTimelinePrayerStatus(prayers) {
+    console.log('updateTimelinePrayerStatus called with', prayers.length, 'prayers');
+
+    // Build a map of prayer name to status
+    const prayerStatusMap = {};
+    prayers.forEach(prayer => {
+        prayerStatusMap[prayer.prayer_name] = {
+            is_completed: prayer.is_completed,
+            status: prayer.status
+        };
+        console.log(`Prayer status map: ${prayer.prayer_name} = ${prayer.status}`);
+    });
+
+    // Update all prayer items in the timeline
+    const timelineItems = document.querySelectorAll('[data-prayer-name]');
+    console.log('Found', timelineItems.length, 'timeline prayer items');
+
+    timelineItems.forEach(item => {
+        const prayerName = item.getAttribute('data-prayer-name');
+        const prayerData = prayerStatusMap[prayerName];
+
+        console.log(`Updating timeline: ${prayerName} = ${prayerData?.status}`);
+
+        if (prayerData) {
+            // Map status to display text and styling
+            const statusMap = {
+                'prayed': { text: '✓ Done', class: 'active', bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)' },
+                'not_yet': { text: '⏳ Not Yet', class: 'pending', bg: 'rgba(0, 0, 0, 0.2)', border: 'rgba(124, 58, 237, 0.3)' },
+                'missed': { text: '✕ Missed', class: 'pending', bg: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.3)' }
+            };
+
+            const styling = statusMap[prayerData.status] || statusMap['not_yet'];
+
+            // Update the status badge
+            const statusBadges = item.querySelectorAll('.status-badge');
+            console.log(`Found ${statusBadges.length} status badges for ${prayerName}`);
+
+            statusBadges.forEach(badge => {
+                badge.textContent = styling.text;
+
+                // Remove both classes first
+                badge.classList.remove('active', 'pending');
+
+                // Add the appropriate class
+                badge.classList.add(styling.class);
+
+                console.log(`Updated badge for ${prayerName}: ${styling.text}`);
+            });
+
+            // Update the item background color
+            item.style.background = styling.bg;
+            item.style.borderColor = styling.border;
+
+            console.log(`Updated background for ${prayerName}`);
+        }
+    });
+
+    console.log('updateTimelinePrayerStatus complete');
 }
 
 function togglePrayerCompletion(prayerName, dateStr, isCompleted) {
     const url = `/api/prayers/${prayerName}/toggle/`;
-    console.log('Toggling prayer:', { prayerName, dateStr, isCompleted, url });
+    const status = isCompleted ? 'prayed' : 'not_yet';
+    console.log('Toggling prayer:', { prayerName, dateStr, isCompleted, status, url });
 
     fetch(url, {
         method: 'POST',
@@ -1129,7 +1319,8 @@ function togglePrayerCompletion(prayerName, dateStr, isCompleted) {
         },
         body: JSON.stringify({
             date: dateStr,
-            is_completed: isCompleted
+            is_completed: isCompleted,
+            status: status
         })
     })
     .then(response => {

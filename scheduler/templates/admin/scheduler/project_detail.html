@@ -312,10 +312,11 @@ function renderGanttChart() {
 
     // Chart dimensions
     const margin = { top: 50, right: 20, bottom: 40, left: 180 };
+    const headerHeight = 40;
     const chartWidth = svg.clientWidth - margin.left - margin.right;
     const barHeight = 30;
     const rowHeight = 50;
-    const totalHeight = (tasks.length * rowHeight) + margin.top + margin.bottom;
+    const totalHeight = (tasks.length * rowHeight) + margin.top + headerHeight + margin.bottom;
 
     svg.setAttribute('height', totalHeight);
 
@@ -344,7 +345,7 @@ function renderGanttChart() {
         // Date line
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('x1', x);
-        line.setAttribute('y1', margin.top);
+        line.setAttribute('y1', margin.top + headerHeight);
         line.setAttribute('x2', x);
         line.setAttribute('y2', totalHeight);
         line.setAttribute('stroke', 'rgba(255,255,255,0.1)');
@@ -364,7 +365,7 @@ function renderGanttChart() {
 
     // Draw tasks
     tasks.forEach((task, index) => {
-        const y = margin.top + (index * rowHeight) + 10;
+        const y = margin.top + headerHeight + (index * rowHeight);
 
         // Task name (left side, outside bar)
         const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -401,7 +402,7 @@ function renderGanttChart() {
     });
 
     // Add legend
-    const legendY = margin.top + (tasks.length * rowHeight) + 20;
+    const legendY = margin.top + headerHeight + (tasks.length * rowHeight) + 20;
     const legendText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     legendText.setAttribute('x', margin.left);
     legendText.setAttribute('y', legendY);

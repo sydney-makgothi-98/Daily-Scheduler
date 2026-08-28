@@ -288,8 +288,19 @@
 <script>
 // Render Gantt chart
 function renderGanttChart() {
-    const tasks = {{ tasks|safe }};
-    if (tasks.length === 0) return;
+    // Build tasks array from template data
+    const tasksData = [
+        {% for task in tasks %}
+        {
+            id: {{ task.id }},
+            title: "{{ task.title|escapejs }}",
+            duration_hours: {{ task.duration_hours }},
+            is_scheduled: {{ task.is_scheduled|lower }}
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    if (tasksData.length === 0) return;
 
     const svg = document.getElementById('ganttChart');
     if (!svg) return;
@@ -297,6 +308,7 @@ function renderGanttChart() {
     const startDate = new Date('{{ project.start_date }}');
     const endDate = new Date('{{ project.end_date }}');
     const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+    const tasks = tasksData;
 
     // Chart dimensions
     const margin = { top: 20, right: 20, bottom: 40, left: 150 };

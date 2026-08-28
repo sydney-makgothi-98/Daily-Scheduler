@@ -401,15 +401,6 @@ function renderGanttChart() {
         svg.appendChild(infoText);
     });
 
-    // Add legend
-    const legendY = margin.top + headerHeight + (tasks.length * rowHeight) + 20;
-    const legendText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    legendText.setAttribute('x', margin.left);
-    legendText.setAttribute('y', legendY);
-    legendText.setAttribute('fill', '#cbd5e1');
-    legendText.setAttribute('font-size', '12');
-    legendText.textContent = '📌 Timeline: ' + startDate.toLocaleDateString() + ' - ' + endDate.toLocaleDateString() + ' | Create schedules to visualize task placement';
-    svg.appendChild(legendText);
 }
 
 // Render on page load

@@ -145,10 +145,23 @@ def create_schedule(request, task_id):
 
     try:
         data = json.loads(request.body)
+        day_of_week = int(data.get("day_of_week"))
+
+        # Check if schedule already exists for this task on this day
+        existing_schedule = ProjectSchedule.objects.filter(
+            project_task=task,
+            day_of_week=day_of_week
+        ).exists()
+
+        if existing_schedule:
+            return JsonResponse({
+                "success": False,
+                "error": "You are scheduling the same task twice in one day"
+            }, status=400)
 
         schedule = ProjectSchedule.objects.create(
             project_task=task,
-            day_of_week=int(data.get("day_of_week")),
+            day_of_week=day_of_week,
             start_time=datetime.strptime(data.get("start_time"), "%H:%M").time(),
             duration_hours=float(data.get("duration_hours", task.duration_hours)),
             weeks=int(data.get("weeks", 1))
@@ -167,7 +180,11 @@ def create_schedule(request, task_id):
             }
         })
     except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=400)
+        error_msg = str(e)
+        # Catch unique constraint errors and provide user-friendly message
+        if "UNIQUE constraint failed" in error_msg and "day_of_week" in error_msg:
+            error_msg = "You are scheduling the same task twice in one day"
+        return JsonResponse({"success": False, "error": error_msg}, status=400)
 
 
 @csrf_exempt

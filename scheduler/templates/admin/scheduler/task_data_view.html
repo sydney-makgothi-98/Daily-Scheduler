@@ -106,6 +106,71 @@
     </div>
 </div>
 
+<!-- Copy from Yesterday Modal -->
+<div id="copyYesterdayModal" style="
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    padding: 1rem;
+">
+    <div style="
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(10, 14, 39, 0.95) 100%);
+        border: 1px solid rgba(124, 58, 237, 0.3);
+        border-radius: 16px;
+        padding: 2rem;
+        max-width: 600px;
+        width: 100%;
+        max-height: 80vh;
+        overflow-y: auto;
+        text-align: left;
+        animation: slideUp 0.3s ease;
+    ">
+        <h3 style="
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #f8fafc;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        ">
+            📋 Copy Tasks from Yesterday
+        </h3>
+
+        <div id="copyYesterdayContent" style="margin-bottom: 1.5rem;">
+            <!-- Tasks will be loaded here -->
+        </div>
+
+        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-top: 1.5rem;">
+            <button id="copySelectedBtn" class="btn btn-success" style="
+                padding: 0.75rem 1.5rem;
+                font-weight: 500;
+            ">
+                ✓ Copy Selected
+            </button>
+            <button id="copyAllBtn" class="btn btn-success" style="
+                padding: 0.75rem 1.5rem;
+                font-weight: 500;
+                background: rgba(34, 197, 94, 0.3);
+                border: 1px solid #22c55e;
+            ">
+                ✓ Copy All
+            </button>
+            <button id="closeCopyModalBtn" class="btn btn-secondary" style="
+                padding: 0.75rem 1.5rem;
+            ">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Completion Modal -->
 <div id="completionModal" style="
     display: none;
@@ -564,10 +629,18 @@
 </div>
 
 <!-- Create Task Button -->
-<div style="margin-top: 2rem; text-align: center;">
+<div style="margin-top: 2rem; text-align: center; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
     <a href="{% url 'create_personal_task' year=date.year month=date.month day=date.day %}" class="btn btn-primary" style="display: inline-block;">
         ➕ Create Task
     </a>
+    <button id="copyYesterdayBtn" class="btn btn-primary" style="
+        display: inline-block;
+        background: rgba(124, 58, 237, 0.2);
+        border: 1px solid rgba(124, 58, 237, 0.5);
+        color: #a78bfa;
+    ">
+        📋 Copy from Yesterday
+    </button>
 </div>
 
 <style>
@@ -1357,5 +1430,246 @@ function updatePrayerStats(completed, total) {
 
 // Load prayers when page loads
 document.addEventListener('DOMContentLoaded', loadPrayerCompletions);
+
+// Copy from Yesterday functionality
+const copyYesterdayModal = document.getElementById('copyYesterdayModal');
+const copyYesterdayBtn = document.getElementById('copyYesterdayBtn');
+const closeCopyModalBtn = document.getElementById('closeCopyModalBtn');
+const copyYesterdayContent = document.getElementById('copyYesterdayContent');
+const copySelectedBtn = document.getElementById('copySelectedBtn');
+const copyAllBtn = document.getElementById('copyAllBtn');
+
+let yesterdayTasks = [];
+let selectedTaskIds = new Set();
+
+copyYesterdayBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    openCopyYesterdayModal();
+});
+
+closeCopyModalBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeCopyYesterdayModal();
+});
+
+copyYesterdayModal.addEventListener('click', function(e) {
+    if (e.target === copyYesterdayModal) {
+        closeCopyYesterdayModal();
+    }
+}, { capture: false });
+
+function openCopyYesterdayModal() {
+    copyYesterdayModal.style.display = 'flex';
+    selectedTaskIds.clear();
+    copyYesterdayContent.innerHTML = '<div style="color: #cbd5e1; text-align: center; padding: 2rem;">Loading yesterday\'s tasks...</div>';
+
+    fetch(`/api/tasks/${currentDate.split('-')[0]}/${parseInt(currentDate.split('-')[1])}/${parseInt(currentDate.split('-')[2])}/yesterday/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.tasks.length > 0) {
+                yesterdayTasks = data.tasks;
+                displayYesterdayTasks(data.tasks);
+            } else {
+                copyYesterdayContent.innerHTML = '<div style="color: #cbd5e1; text-align: center; padding: 2rem;">No tasks found for yesterday</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading yesterday tasks:', error);
+            copyYesterdayContent.innerHTML = '<div style="color: #ef4444; text-align: center; padding: 2rem;">Error loading yesterday\'s tasks</div>';
+        });
+}
+
+function closeCopyYesterdayModal() {
+    copyYesterdayModal.style.display = 'none';
+}
+
+function displayYesterdayTasks(tasks) {
+    copyYesterdayContent.innerHTML = '';
+
+    tasks.forEach(task => {
+        const taskDiv = document.createElement('div');
+        taskDiv.style.cssText = `
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        `;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = task.id;
+        checkbox.style.cssText = `
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #a78bfa;
+            margin-top: 0.25rem;
+        `;
+
+        checkbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                selectedTaskIds.add(task.id);
+            } else {
+                selectedTaskIds.delete(task.id);
+            }
+        });
+
+        const contentDiv = document.createElement('div');
+        contentDiv.style.cssText = `
+            flex: 1;
+        `;
+
+        const titleDiv = document.createElement('div');
+        titleDiv.style.cssText = `
+            color: #f8fafc;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        `;
+        titleDiv.textContent = task.title;
+
+        const categoryDiv = document.createElement('div');
+        categoryDiv.style.cssText = `
+            color: #cbd5e1;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        `;
+        categoryDiv.innerHTML = `<strong>Category:</strong> ${task.category_display}`;
+
+        const timesDiv = document.createElement('div');
+        timesDiv.style.cssText = `
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+            flex-wrap: wrap;
+        `;
+
+        const startTimeLabel = document.createElement('div');
+        startTimeLabel.style.cssText = `color: #cbd5e1; font-size: 0.875rem;`;
+        startTimeLabel.textContent = 'Start Time:';
+
+        const startTimeInput = document.createElement('input');
+        startTimeInput.type = 'time';
+        startTimeInput.value = task.start_time;
+        startTimeInput.dataset.taskId = task.id;
+        startTimeInput.className = 'copy-start-time-input';
+        startTimeInput.style.cssText = `
+            padding: 0.375rem 0.5rem;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 4px;
+            color: #f8fafc;
+            font-size: 0.875rem;
+        `;
+
+        const endTimeLabel = document.createElement('div');
+        endTimeLabel.style.cssText = `color: #cbd5e1; font-size: 0.875rem;`;
+        endTimeLabel.textContent = 'End Time:';
+
+        const endTimeInput = document.createElement('input');
+        endTimeInput.type = 'time';
+        endTimeInput.value = task.end_time;
+        endTimeInput.dataset.taskId = task.id;
+        endTimeInput.className = 'copy-end-time-input';
+        endTimeInput.style.cssText = `
+            padding: 0.375rem 0.5rem;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 4px;
+            color: #f8fafc;
+            font-size: 0.875rem;
+        `;
+
+        timesDiv.appendChild(startTimeLabel);
+        timesDiv.appendChild(startTimeInput);
+        timesDiv.appendChild(endTimeLabel);
+        timesDiv.appendChild(endTimeInput);
+
+        contentDiv.appendChild(titleDiv);
+        contentDiv.appendChild(categoryDiv);
+        contentDiv.appendChild(timesDiv);
+
+        taskDiv.appendChild(checkbox);
+        taskDiv.appendChild(contentDiv);
+        copyYesterdayContent.appendChild(taskDiv);
+    });
+}
+
+copySelectedBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (selectedTaskIds.size > 0) {
+        performCopyTasks(Array.from(selectedTaskIds));
+    } else {
+        window.showToast('Please select at least one task to copy', 'warning', 3000);
+    }
+});
+
+copyAllBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    performCopyTasks(yesterdayTasks.map(t => t.id));
+});
+
+function performCopyTasks(taskIds) {
+    // Collect time overrides
+    const timeOverrides = {};
+    document.querySelectorAll('.copy-start-time-input').forEach(input => {
+        const taskId = parseInt(input.dataset.taskId);
+        const startTime = input.value;
+        const endTimeInput = document.querySelector(`.copy-end-time-input[data-task-id="${taskId}"]`);
+        const endTime = endTimeInput.value;
+
+        if (taskIds.includes(taskId)) {
+            timeOverrides[taskId] = {
+                start_time: startTime,
+                end_time: endTime
+            };
+        }
+    });
+
+    copySelectedBtn.disabled = true;
+    copyAllBtn.disabled = true;
+
+    fetch(`/api/tasks/${currentDate.split('-')[0]}/${parseInt(currentDate.split('-')[1])}/${parseInt(currentDate.split('-')[2])}/copy-yesterday/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            task_ids: taskIds,
+            time_overrides: timeOverrides
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success || data.copied_tasks.length > 0) {
+            window.showToast(`Successfully copied ${data.copied_tasks.length} task(s)!`, 'success', 3000);
+            closeCopyYesterdayModal();
+            // Reload the page to show the new tasks
+            setTimeout(() => window.location.reload(), 600);
+        } else {
+            window.showToast('No tasks were copied', 'error', 3000);
+        }
+
+        if (data.errors && data.errors.length > 0) {
+            console.warn('Copy errors:', data.errors);
+        }
+    })
+    .catch(error => {
+        console.error('Error copying tasks:', error);
+        window.showToast('Error copying tasks: ' + error.message, 'error', 4000);
+    })
+    .finally(() => {
+        copySelectedBtn.disabled = false;
+        copyAllBtn.disabled = false;
+    });
+}
 </script>
 {% endblock %}

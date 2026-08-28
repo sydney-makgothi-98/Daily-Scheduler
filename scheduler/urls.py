@@ -46,6 +46,8 @@ urlpatterns += [
     path("api/subtasks/<int:subtask_id>/toggle/", views.toggle_subtask_completion, name="toggle_subtask"),
     path("api/subtasks/<int:subtask_id>/delete/", views.delete_subtask, name="delete_subtask"),
     path("api/tasks/<int:year>/<int:month>/<int:day>/", views.get_tasks_by_date_api, name="get_tasks_api"),
+    path("api/tasks/<int:year>/<int:month>/<int:day>/yesterday/", views.get_yesterday_tasks, name="get_yesterday_tasks"),
+    path("api/tasks/<int:year>/<int:month>/<int:day>/copy-yesterday/", views.copy_tasks_from_yesterday, name="copy_tasks_from_yesterday"),
 ]
 
 urlpatterns += [

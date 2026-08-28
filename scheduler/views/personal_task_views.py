@@ -433,3 +433,107 @@ def get_task_subtasks(request, task_id):
         })
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_yesterday_tasks(request, year, month, day):
+    """Fetch tasks from the previous day"""
+    try:
+        current_date = datetime(year, month, day).date()
+        yesterday = current_date - timedelta(days=1)
+    except ValueError:
+        return JsonResponse({"error": "Invalid date"}, status=400)
+
+    tasks = PersonalTask.objects.filter(date=yesterday).order_by("start_time")
+
+    task_list = []
+    for task in tasks:
+        task_list.append({
+            "id": task.id,
+            "title": task.title,
+            "description": task.description,
+            "start_time": task.start_time.strftime("%H:%M"),
+            "end_time": task.end_time.strftime("%H:%M"),
+            "category": task.category,
+            "category_display": task.get_category_display(),
+        })
+
+    return JsonResponse({
+        "success": True,
+        "date": yesterday.isoformat(),
+        "tasks": task_list
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def copy_tasks_from_yesterday(request, year, month, day):
+    """Copy selected tasks from yesterday to today"""
+    try:
+        current_date = datetime(year, month, day).date()
+        yesterday = current_date - timedelta(days=1)
+    except ValueError:
+        return JsonResponse({"error": "Invalid date"}, status=400)
+
+    try:
+        data = json.loads(request.body)
+        task_ids = data.get("task_ids", [])
+        time_overrides = data.get("time_overrides", {})
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    copied_tasks = []
+    errors = []
+
+    for task_id in task_ids:
+        try:
+            original_task = PersonalTask.objects.get(id=task_id, date=yesterday)
+
+            # Get time overrides if provided
+            start_time = original_task.start_time
+            end_time = original_task.end_time
+
+            if str(task_id) in time_overrides:
+                override = time_overrides[str(task_id)]
+                if "start_time" in override:
+                    start_time = datetime.strptime(override["start_time"], "%H:%M").time()
+                if "end_time" in override:
+                    end_time = datetime.strptime(override["end_time"], "%H:%M").time()
+
+            # Create the copied task
+            new_task = PersonalTask.objects.create(
+                title=original_task.title,
+                description=original_task.description,
+                date=current_date,
+                start_time=start_time,
+                end_time=end_time,
+                category=original_task.category,
+                is_completed=False
+            )
+
+            # Copy subtasks if any
+            for subtask in original_task.subtasks.all():
+                SubTask.objects.create(
+                    personal_task=new_task,
+                    title=subtask.title,
+                    order=subtask.order
+                )
+
+            copied_tasks.append({
+                "id": new_task.id,
+                "title": new_task.title,
+                "start_time": new_task.start_time.strftime("%H:%M"),
+                "end_time": new_task.end_time.strftime("%H:%M"),
+            })
+        except PersonalTask.DoesNotExist:
+            errors.append(f"Task {task_id} not found for yesterday")
+        except Exception as e:
+            errors.append(f"Error copying task {task_id}: {str(e)}")
+
+    return JsonResponse({
+        "success": len(copied_tasks) > 0,
+        "copied_tasks": copied_tasks,
+        "errors": errors,
+        "message": f"Successfully copied {len(copied_tasks)} task(s)"
+    })

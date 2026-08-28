@@ -366,35 +366,36 @@ function renderGanttChart() {
     tasks.forEach((task, index) => {
         const y = margin.top + (index * rowHeight) + 10;
 
-        // Task name
+        // Task name (left side, outside bar)
         const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        nameText.setAttribute('x', 10);
+        nameText.setAttribute('x', margin.left - 10);
         nameText.setAttribute('y', y + barHeight / 2 + 5);
         nameText.setAttribute('fill', '#f8fafc');
         nameText.setAttribute('font-size', '13');
         nameText.setAttribute('font-weight', '600');
-        nameText.setAttribute('text-anchor', 'start');
-        nameText.textContent = task.title.substring(0, 18);
+        nameText.setAttribute('text-anchor', 'end');
+        nameText.textContent = task.title.substring(0, 20);
         svg.appendChild(nameText);
 
-        // Task bar (simplified - shows full project duration)
+        // Task bar (light blue, simplified - shows full project duration)
         const barRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         barRect.setAttribute('x', margin.left);
         barRect.setAttribute('y', y);
         barRect.setAttribute('width', chartWidth);
         barRect.setAttribute('height', barHeight);
-        barRect.setAttribute('fill', 'rgba(167, 139, 250, 0.2)');
-        barRect.setAttribute('stroke', 'rgba(167, 139, 250, 0.5)');
-        barRect.setAttribute('stroke-width', '1');
+        barRect.setAttribute('fill', 'rgba(14, 165, 233, 0.3)');
+        barRect.setAttribute('stroke', 'rgba(14, 165, 233, 0.7)');
+        barRect.setAttribute('stroke-width', '1.5');
         barRect.setAttribute('rx', '4');
         svg.appendChild(barRect);
 
-        // Task duration info
+        // Task duration info (inside bar, light blue text)
         const infoText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        infoText.setAttribute('x', margin.left + 10);
-        infoText.setAttribute('y', y + barHeight / 2 + 5);
-        infoText.setAttribute('fill', '#a78bfa');
+        infoText.setAttribute('x', margin.left + 8);
+        infoText.setAttribute('y', y + barHeight / 2 + 4);
+        infoText.setAttribute('fill', '#0ea5e9');
         infoText.setAttribute('font-size', '11');
+        infoText.setAttribute('font-weight', '600');
         infoText.textContent = task.duration_hours + 'h/session';
         svg.appendChild(infoText);
     });

@@ -44,6 +44,19 @@ class PersonalTask(models.Model):
         default=False,
         help_text=_("Whether the task is completed")
     )
+    is_break = models.BooleanField(
+        _("is break"),
+        default=False,
+        help_text=_("Whether this is an auto-inserted break task")
+    )
+    parent_task = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="breaks",
+        help_text=_("Parent task if this is a break")
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

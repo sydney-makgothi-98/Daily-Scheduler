@@ -30,6 +30,8 @@ __all__ = [
     "toggle_subtask_completion",
     "delete_subtask",
     "get_task_subtasks",
+    "get_yesterday_tasks",
+    "copy_tasks_from_yesterday",
     "analytics_dashboard",
     "get_chart_data_api",
     "get_subtask_chart_data_api",
@@ -63,6 +65,8 @@ from .personal_task_views import (
     toggle_subtask_completion,
     delete_subtask,
     get_task_subtasks,
+    get_yesterday_tasks,
+    copy_tasks_from_yesterday,
 )
 from .analytics_views import (
     analytics_dashboard,

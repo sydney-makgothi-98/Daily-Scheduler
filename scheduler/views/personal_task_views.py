@@ -12,6 +12,47 @@ from scheduler.models import PersonalTask, PrayerSchedule, TaskCategory, TaskCom
 from scheduler.forms import PersonalTaskForm
 
 
+def auto_insert_breaks(task):
+    """Automatically insert a 10-minute break after tasks >= 1 hour"""
+    if task.is_break:
+        return
+
+    start = datetime.combine(task.date, task.start_time)
+    end = datetime.combine(task.date, task.end_time)
+    duration = (end - start).total_seconds() / 60
+
+    if duration >= 60:
+        break_start = task.end_time
+        break_end_time = (datetime.combine(task.date, task.end_time) + timedelta(minutes=10)).time()
+
+        existing_break = PersonalTask.objects.filter(
+            date=task.date,
+            start_time=break_start,
+            is_break=True,
+            parent_task=task
+        ).exists()
+
+        if not existing_break:
+            conflicting_tasks = PersonalTask.objects.filter(
+                date=task.date,
+                start_time__lt=break_end_time,
+                end_time__gt=break_start
+            ).exclude(id=task.id).exists()
+
+            if not conflicting_tasks:
+                PersonalTask.objects.create(
+                    title="🔔 Break",
+                    description="Auto-inserted break to prevent burnout",
+                    date=task.date,
+                    start_time=break_start,
+                    end_time=break_end_time,
+                    category=TaskCategory.FUN,
+                    is_break=True,
+                    parent_task=task,
+                    is_completed=False
+                )
+
+
 def calendar_view(request):
     """Display monthly calendar with task indicators"""
     today = timezone.now().date()
@@ -206,6 +247,9 @@ def create_personal_task(request, year, month, day):
                 except (json.JSONDecodeError, KeyError) as e:
                     messages.warning(request, "Task created, but some subtasks could not be added.")
 
+            # Auto-insert breaks for tasks >= 1 hour
+            auto_insert_breaks(task)
+
             messages.success(request, f"Task '{task.title}' created successfully!")
             return redirect("task_data_view", year=date.year, month=date.month, day=date.day)
     else:
@@ -245,6 +289,10 @@ def edit_personal_task(request, task_id):
                         )
                 except (json.JSONDecodeError, KeyError) as e:
                     messages.warning(request, "Task updated, but some subtasks could not be updated.")
+
+            # Delete old break and create new one if needed
+            task.breaks.all().delete()
+            auto_insert_breaks(task)
 
             messages.success(request, f"Task '{task.title}' updated successfully!")
             return redirect("task_data_view", year=task.date.year, month=task.date.month, day=task.date.day)

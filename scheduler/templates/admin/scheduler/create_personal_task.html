@@ -125,6 +125,20 @@
                         {% for error in form.start_time.errors %}<li>{{ error }}</li>{% endfor %}
                     </ul>
                 {% endif %}
+                <!-- Late task warning (non-blocking) -->
+                <div id="lateTaskWarning" style="
+                    background: rgba(239, 68, 68, 0.1);
+                    border-left: 4px solid #ef4444;
+                    border-radius: 4px;
+                    padding: 0.75rem;
+                    margin-bottom: 0.5rem;
+                    color: #ef4444;
+                    font-size: 0.875rem;
+                    display: none;
+                    font-weight: 500;
+                ">
+                    ⚠️ <strong>Warning:</strong> Tasks after 20:00 are detrimental to sleep quality. You can still save, but consider rescheduling if possible.
+                </div>
                 {{ form.start_time }}
                 <style>
                     #{{ form.start_time.id_for_label }} {
@@ -212,6 +226,33 @@
             </style>
         </div>
 
+        <!-- Subtasks Section -->
+        <div>
+            <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                ✓ Subtasks (Optional)
+            </label>
+            <p style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 1rem;">
+                Break down this task into smaller, manageable steps.
+            </p>
+
+            <div id="subtasksContainer" style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
+                <!-- Subtasks will be added here dynamically -->
+            </div>
+
+            <button type="button" id="addSubtaskBtn" style="
+                padding: 0.5rem 1rem;
+                background: rgba(124, 58, 237, 0.2);
+                border: 1px solid rgba(124, 58, 237, 0.5);
+                border-radius: 6px;
+                color: #a78bfa;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.3s ease;
+            " onmouseover="this.style.background='rgba(124, 58, 237, 0.3)'" onmouseout="this.style.background='rgba(124, 58, 237, 0.2)'">
+                + Add Subtask
+            </button>
+        </div>
+
         <!-- Non-field Errors -->
         {% if form.non_field_errors %}
             <div style="
@@ -250,11 +291,115 @@ document.addEventListener('DOMContentLoaded', function() {
     const startTimeInput = document.getElementById('id_start_time');
     const endTimeInput = document.getElementById('id_end_time');
     const categoryInput = document.getElementById('id_category');
+    const addSubtaskBtn = document.getElementById('addSubtaskBtn');
+    const subtasksContainer = document.getElementById('subtasksContainer');
+    let subtaskCount = 0;
+
+    // Load existing subtasks if in edit mode
+    {% if existing_subtasks %}
+    const existingSubtasks = {{ existing_subtasks|safe }};
+    existingSubtasks.forEach((subtask, index) => {
+        subtaskCount = Math.max(subtaskCount, index + 1);
+        addSubtaskInput(subtask.title, subtask.id);
+    });
+    {% endif %}
 
     // Focus first input on page load
     if (titleInput) {
         setTimeout(() => titleInput.focus(), 100);
     }
+
+    // Subtask management
+    addSubtaskBtn.addEventListener('click', function() {
+        addSubtaskInput();
+    });
+
+    function addSubtaskInput(initialValue = '', subtaskId = null) {
+        subtaskCount++;
+        const subtaskDiv = document.createElement('div');
+        subtaskDiv.className = 'subtask-item';
+        subtaskDiv.style.display = 'flex';
+        subtaskDiv.style.gap = '0.75rem';
+        subtaskDiv.style.alignItems = 'center';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.name = `subtask_${subtaskCount}`;
+        input.placeholder = `Subtask ${subtaskCount}`;
+        input.value = initialValue;
+        input.style.flex = '1';
+        input.style.padding = '0.75rem';
+        input.style.border = '1px solid rgba(124, 58, 237, 0.3)';
+        input.style.borderRadius = '8px';
+        input.style.background = 'rgba(0, 0, 0, 0.2)';
+        input.style.color = '#f8fafc';
+        input.style.fontSize = '1rem';
+        input.style.transition = 'all 0.3s ease';
+
+        input.addEventListener('focus', function() {
+            this.style.borderColor = 'rgba(124, 58, 237, 0.6)';
+            this.style.background = 'rgba(0, 0, 0, 0.3)';
+        });
+
+        input.addEventListener('blur', function() {
+            this.style.borderColor = 'rgba(124, 58, 237, 0.3)';
+            this.style.background = 'rgba(0, 0, 0, 0.2)';
+        });
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.innerHTML = '✕';
+        removeBtn.style.padding = '0.5rem 0.75rem';
+        removeBtn.style.background = 'rgba(239, 68, 68, 0.2)';
+        removeBtn.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        removeBtn.style.borderRadius = '6px';
+        removeBtn.style.color = '#ef4444';
+        removeBtn.style.cursor = 'pointer';
+        removeBtn.style.fontSize = '1rem';
+        removeBtn.style.transition = 'all 0.3s ease';
+
+        removeBtn.addEventListener('mouseover', function() {
+            this.style.background = 'rgba(239, 68, 68, 0.3)';
+        });
+
+        removeBtn.addEventListener('mouseout', function() {
+            this.style.background = 'rgba(239, 68, 68, 0.2)';
+        });
+
+        removeBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            subtaskDiv.remove();
+        });
+
+        subtaskDiv.appendChild(input);
+        subtaskDiv.appendChild(removeBtn);
+        subtasksContainer.appendChild(subtaskDiv);
+        input.focus();
+    }
+
+    // Handle form submission to collect subtasks
+    form.addEventListener('submit', function(e) {
+        const subtasks = [];
+        const subtaskInputs = subtasksContainer.querySelectorAll('input[type="text"]');
+
+        subtaskInputs.forEach((input, index) => {
+            if (input.value.trim()) {
+                subtasks.push({
+                    title: input.value.trim(),
+                    order: index + 1
+                });
+            }
+        });
+
+        // Store subtasks in a hidden input for the server to process
+        if (subtasks.length > 0) {
+            const subtasksInput = document.createElement('input');
+            subtasksInput.type = 'hidden';
+            subtasksInput.name = 'subtasks_json';
+            subtasksInput.value = JSON.stringify(subtasks);
+            form.appendChild(subtasksInput);
+        }
+    });
 
     // Keyboard shortcut: Ctrl+S to submit
     document.addEventListener('keydown', function(e) {
@@ -263,6 +408,30 @@ document.addEventListener('DOMContentLoaded', function() {
             form.submit();
         }
     });
+
+    // Handle late task warning
+    function checkLateTaskWarning() {
+        const warningDiv = document.getElementById('lateTaskWarning');
+        const startTimeValue = startTimeInput.value;
+
+        if (startTimeValue) {
+            const [hours, minutes] = startTimeValue.split(':').map(Number);
+            if (hours >= 20) {
+                warningDiv.style.display = 'block';
+            } else {
+                warningDiv.style.display = 'none';
+            }
+        } else {
+            warningDiv.style.display = 'none';
+        }
+    }
+
+    // Check warning on start time change
+    startTimeInput.addEventListener('change', checkLateTaskWarning);
+    startTimeInput.addEventListener('input', checkLateTaskWarning);
+
+    // Check on page load in case time was pre-filled
+    checkLateTaskWarning();
 
     // Keyboard shortcut: Escape to cancel
     document.addEventListener('keydown', function(e) {

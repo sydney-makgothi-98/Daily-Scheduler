@@ -190,8 +190,23 @@ def create_personal_task(request, year, month, day):
         form = PersonalTaskForm(request.POST)
         if form.is_valid():
             task = form.save(commit=False)
-            messages.success(request, f"Task '{task.title}' created successfully!")
             task.save()
+
+            # Handle subtasks if provided
+            subtasks_json = request.POST.get("subtasks_json")
+            if subtasks_json:
+                try:
+                    subtasks_data = json.loads(subtasks_json)
+                    for subtask_data in subtasks_data:
+                        SubTask.objects.create(
+                            personal_task=task,
+                            title=subtask_data.get("title"),
+                            order=subtask_data.get("order", 0)
+                        )
+                except (json.JSONDecodeError, KeyError) as e:
+                    messages.warning(request, "Task created, but some subtasks could not be added.")
+
+            messages.success(request, f"Task '{task.title}' created successfully!")
             return redirect("task_data_view", year=date.year, month=date.month, day=date.day)
     else:
         initial_data = {"date": date}
@@ -214,6 +229,23 @@ def edit_personal_task(request, task_id):
         form = PersonalTaskForm(request.POST, instance=task)
         if form.is_valid():
             form.save()
+
+            # Handle subtasks if provided
+            subtasks_json = request.POST.get("subtasks_json")
+            if subtasks_json:
+                try:
+                    subtasks_data = json.loads(subtasks_json)
+                    # Delete existing subtasks and recreate them
+                    task.subtasks.all().delete()
+                    for subtask_data in subtasks_data:
+                        SubTask.objects.create(
+                            personal_task=task,
+                            title=subtask_data.get("title"),
+                            order=subtask_data.get("order", 0)
+                        )
+                except (json.JSONDecodeError, KeyError) as e:
+                    messages.warning(request, "Task updated, but some subtasks could not be updated.")
+
             messages.success(request, f"Task '{task.title}' updated successfully!")
             return redirect("task_data_view", year=task.date.year, month=task.date.month, day=task.date.day)
     else:
@@ -225,6 +257,7 @@ def edit_personal_task(request, task_id):
         "date": task.date,
         "date_display": task.date.strftime("%A, %B %d, %Y"),
         "is_edit": True,
+        "existing_subtasks": list(task.subtasks.values("id", "title", "is_completed", "order")),
     }
     return render(request, "admin/scheduler/create_personal_task.html", context)
 

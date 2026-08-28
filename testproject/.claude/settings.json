@@ -3,7 +3,8 @@
     "allow": [
       "Bash(find .. -type d -name \"scheduler\" 2>/dev/null)",
       "Read(//c/Users/thabe/Desktop/Main PC content/In House Software/Daily Schedule App/**)",
-      "Bash(cd \"c:\\\\Users\\\\thabe\\\\Desktop\\\\Main PC content\\\\In House Software\\\\Daily Schedule App\" && find . -type f -name \"*.py\" | grep -E \"\\(models|views|admin\\)\" | head -20)"
+      "Bash(cd \"c:\\\\Users\\\\thabe\\\\Desktop\\\\Main PC content\\\\In House Software\\\\Daily Schedule App\" && find . -type f -name \"*.py\" | grep -E \"\\(models|views|admin\\)\" | head -20)",
+      "Read(//c/Users/thabe/Desktop/Main PC content/In House Software/Daily Schedule App/scheduler/**)"
     ]
   }
 }

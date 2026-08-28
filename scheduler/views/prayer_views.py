@@ -8,7 +8,7 @@ from django.db import models
 from datetime import datetime
 import json
 
-from scheduler.models import PrayerSchedule, PrayerName, PrayerCompletion
+from scheduler.models import PrayerSchedule, PrayerName, PrayerCompletion, PrayerCompletionStatus
 
 
 def prayer_settings(request):
@@ -113,6 +113,7 @@ def toggle_prayer_completion(request, prayer_name):
         data = json.loads(request.body)
         date_str = data.get("date")
         is_completed = data.get("is_completed", False)
+        status = data.get("status", "not_yet")  # prayed, not_yet, or missed
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
@@ -129,12 +130,20 @@ def toggle_prayer_completion(request, prayer_name):
             date=date_obj
         )
 
-        # Update completion status
-        prayer_completion.is_completed = is_completed
-        if is_completed:
+        # Map status to is_completed and set the status field
+        if status == "prayed":
+            prayer_completion.is_completed = True
+            prayer_completion.status = PrayerCompletionStatus.PRAYED
             prayer_completion.completed_at = timezone.now()
-        else:
+        elif status == "missed":
+            prayer_completion.is_completed = False
+            prayer_completion.status = PrayerCompletionStatus.MISSED
             prayer_completion.completed_at = None
+        else:  # not_yet
+            prayer_completion.is_completed = False
+            prayer_completion.status = PrayerCompletionStatus.NOT_YET
+            prayer_completion.completed_at = None
+
         prayer_completion.save()
 
         return JsonResponse({
@@ -142,7 +151,8 @@ def toggle_prayer_completion(request, prayer_name):
             "prayer_name": prayer_name,
             "date": date_str,
             "is_completed": is_completed,
-            "message": f"Prayer marked as {'completed' if is_completed else 'incomplete'}"
+            "status": status,
+            "message": f"Prayer marked as {status.replace('_', ' ')}"
         })
     except ValueError:
         return JsonResponse({"error": "Invalid date format. Use YYYY-MM-DD"}, status=400)
@@ -170,12 +180,24 @@ def get_daily_prayer_completions(request, year, month, day):
         prayer_list = []
         for prayer in prayers:
             is_completed = completion_dict.get(prayer.prayer_name, False)
+
+            # Get the completion record to fetch the status
+            completion = PrayerCompletion.objects.filter(
+                prayer_name=prayer.prayer_name,
+                date=date_obj
+            ).first()
+
+            status = "not_yet"  # default
+            if completion:
+                status = completion.status
+
             prayer_list.append({
                 "prayer_name": prayer.prayer_name,
                 "prayer_display": prayer.get_prayer_name_display(),
                 "start_time": prayer.start_time.isoformat(),
                 "end_time": prayer.end_time.isoformat(),
                 "is_completed": is_completed,
+                "status": status,
             })
 
         # Calculate completion percentage

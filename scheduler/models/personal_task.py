@@ -198,6 +198,12 @@ class TaskCompletion(models.Model):
         return f"{self.task.title} - {status}{rating} ({self.completed_at})"
 
 
+class PrayerCompletionStatus(models.TextChoices):
+    PRAYED = "prayed", _("Prayed")
+    NOT_YET = "not_yet", _("Not Yet")
+    MISSED = "missed", _("Missed")
+
+
 class PrayerCompletion(models.Model):
     prayer_name = models.CharField(
         _("prayer name"),
@@ -213,6 +219,13 @@ class PrayerCompletion(models.Model):
         _("is completed"),
         default=False,
         help_text=_("Whether the prayer was completed")
+    )
+    status = models.CharField(
+        _("completion status"),
+        max_length=20,
+        choices=PrayerCompletionStatus.choices,
+        default=PrayerCompletionStatus.NOT_YET,
+        help_text=_("Status of prayer completion")
     )
     completed_at = models.DateTimeField(
         _("completed at"),

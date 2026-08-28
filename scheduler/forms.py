@@ -55,12 +55,9 @@ class PersonalTaskForm(forms.ModelForm):
                     "End time must be after start time."
                 )
 
-        # Warn about late tasks (past 20:00)
+        # Store late task warning in cleaned data (don't block submission)
         if start_time and start_time.hour >= 20:
-            self.add_error(
-                "start_time",
-                "⚠️ Warning: Tasks after 20:00 are detrimental to sleep. Consider rescheduling."
-            )
+            cleaned_data['late_task_warning'] = True
 
         # Validate date is not in the past
         if date and date < timezone.now().date():

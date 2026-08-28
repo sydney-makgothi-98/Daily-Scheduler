@@ -273,13 +273,10 @@
         border-radius: 8px;
         padding: 1.5rem;
         overflow-x: auto;
-        min-height: 300px;
+        min-height: 400px;
     ">
-        <!-- Gantt chart will be rendered here -->
         {% if tasks %}
-            <div style="color: #cbd5e1; text-align: center; padding: 2rem;">
-                Gantt chart visualization showing project timeline and task schedules
-            </div>
+        <svg id="ganttChart" style="width: 100%; min-width: 800px; height: 400px;"></svg>
         {% else %}
             <div style="color: #cbd5e1; text-align: center; padding: 2rem;">
                 Add tasks and create schedules to visualize the Gantt chart
@@ -287,6 +284,124 @@
         {% endif %}
     </div>
 </div>
+
+<script>
+// Render Gantt chart
+function renderGanttChart() {
+    const tasks = {{ tasks|safe }};
+    if (tasks.length === 0) return;
+
+    const svg = document.getElementById('ganttChart');
+    if (!svg) return;
+
+    const startDate = new Date('{{ project.start_date }}');
+    const endDate = new Date('{{ project.end_date }}');
+    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+
+    // Chart dimensions
+    const margin = { top: 20, right: 20, bottom: 40, left: 150 };
+    const chartWidth = svg.clientWidth - margin.left - margin.right;
+    const barHeight = 30;
+    const rowHeight = 50;
+    const totalHeight = (tasks.length * rowHeight) + margin.top + margin.bottom;
+
+    svg.setAttribute('height', totalHeight);
+
+    // Clear SVG
+    svg.innerHTML = '';
+
+    // Add title background
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', svg.clientWidth);
+    bg.setAttribute('height', totalHeight);
+    bg.setAttribute('fill', 'rgba(0,0,0,0.1)');
+    bg.setAttribute('rx', '8');
+    svg.appendChild(bg);
+
+    // Scale: pixels per day
+    const pixelsPerDay = chartWidth / totalDays;
+
+    // Draw timeline header
+    const headerGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+    for (let i = 0; i < totalDays; i += Math.ceil(totalDays / 10)) {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + i);
+        const x = margin.left + (i * pixelsPerDay);
+
+        // Date line
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x);
+        line.setAttribute('y1', margin.top);
+        line.setAttribute('x2', x);
+        line.setAttribute('y2', totalHeight);
+        line.setAttribute('stroke', 'rgba(255,255,255,0.1)');
+        line.setAttribute('stroke-width', '1');
+        svg.appendChild(line);
+
+        // Date text
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', x);
+        text.setAttribute('y', margin.top + 15);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('fill', '#cbd5e1');
+        text.setAttribute('font-size', '12');
+        text.textContent = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        svg.appendChild(text);
+    }
+
+    // Draw tasks
+    tasks.forEach((task, index) => {
+        const y = margin.top + (index * rowHeight) + 10;
+
+        // Task name
+        const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        nameText.setAttribute('x', 10);
+        nameText.setAttribute('y', y + barHeight / 2 + 5);
+        nameText.setAttribute('fill', '#f8fafc');
+        nameText.setAttribute('font-size', '13');
+        nameText.setAttribute('font-weight', '600');
+        nameText.setAttribute('text-anchor', 'start');
+        nameText.textContent = task.title.substring(0, 18);
+        svg.appendChild(nameText);
+
+        // Task bar (simplified - shows full project duration)
+        const barRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        barRect.setAttribute('x', margin.left);
+        barRect.setAttribute('y', y);
+        barRect.setAttribute('width', chartWidth);
+        barRect.setAttribute('height', barHeight);
+        barRect.setAttribute('fill', 'rgba(167, 139, 250, 0.2)');
+        barRect.setAttribute('stroke', 'rgba(167, 139, 250, 0.5)');
+        barRect.setAttribute('stroke-width', '1');
+        barRect.setAttribute('rx', '4');
+        svg.appendChild(barRect);
+
+        // Task duration info
+        const infoText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        infoText.setAttribute('x', margin.left + 10);
+        infoText.setAttribute('y', y + barHeight / 2 + 5);
+        infoText.setAttribute('fill', '#a78bfa');
+        infoText.setAttribute('font-size', '11');
+        infoText.textContent = task.duration_hours + 'h/session';
+        svg.appendChild(infoText);
+    });
+
+    // Add legend
+    const legendY = margin.top + (tasks.length * rowHeight) + 20;
+    const legendText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    legendText.setAttribute('x', margin.left);
+    legendText.setAttribute('y', legendY);
+    legendText.setAttribute('fill', '#cbd5e1');
+    legendText.setAttribute('font-size', '12');
+    legendText.textContent = '📌 Timeline: ' + startDate.toLocaleDateString() + ' - ' + endDate.toLocaleDateString() + ' | Create schedules to visualize task placement';
+    svg.appendChild(legendText);
+}
+
+// Render on page load
+document.addEventListener('DOMContentLoaded', renderGanttChart);
+window.addEventListener('resize', renderGanttChart);
+</script>
 
 <script>
 const projectId = {{ project.id }};

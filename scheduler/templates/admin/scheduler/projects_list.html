@@ -1,0 +1,197 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Projects - Task Scheduler{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'calendar_view' %}" class="btn btn-secondary" style="display: inline-block;">← Back to Calendar</a>
+</div>
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+    <h2 class="section-title" style="margin: 0;">📊 Projects</h2>
+    <a href="{% url 'create_project' %}" class="btn btn-primary" style="display: inline-block;">
+        ➕ Create Project
+    </a>
+</div>
+
+{% if projects %}
+<div class="glass-card">
+    <div style="display: grid; gap: 1.5rem;">
+        {% for project in projects %}
+        <div style="
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        "
+        onmouseover="this.style.borderColor='rgba(124, 58, 237, 0.6)'; this.style.background='rgba(0, 0, 0, 0.3)';"
+        onmouseout="this.style.borderColor='rgba(124, 58, 237, 0.3)'; this.style.background='rgba(0, 0, 0, 0.2)';">
+
+            <div style="display: flex; justify-content: space-between; align-items: start; gap: 1rem; margin-bottom: 1rem;">
+                <div style="flex: 1;">
+                    <a href="{% url 'project_detail' project.id %}" style="
+                        text-decoration: none;
+                        color: #f8fafc;
+                    ">
+                        <h3 style="
+                            font-size: 1.25rem;
+                            font-weight: 700;
+                            color: #f8fafc;
+                            margin: 0 0 0.5rem 0;
+                            cursor: pointer;
+                            transition: color 0.2s ease;
+                        "
+                        onmouseover="this.style.color='#a78bfa';"
+                        onmouseout="this.style.color='#f8fafc';">
+                            {{ project.title }}
+                        </h3>
+                    </a>
+
+                    {% if project.description %}
+                    <p style="
+                        color: #cbd5e1;
+                        font-size: 0.875rem;
+                        margin: 0 0 0.75rem 0;
+                    ">{{ project.description|truncatechars:100 }}</p>
+                    {% endif %}
+
+                    <div style="display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                        <div>
+                            <div style="color: #cbd5e1; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em;">Start Date</div>
+                            <div style="color: #f8fafc; font-weight: 600;">{{ project.start_date|date:"M d, Y" }}</div>
+                        </div>
+                        <div>
+                            <div style="color: #cbd5e1; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em;">End Date</div>
+                            <div style="color: #f8fafc; font-weight: 600;">{{ project.end_date|date:"M d, Y" }}</div>
+                        </div>
+                        <div>
+                            <div style="color: #cbd5e1; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em;">Status</div>
+                            <div style="
+                                color: {% if project.status == 'completed' %}#10b981{% elif project.status == 'in_progress' %}#f59e0b{% elif project.status == 'on_hold' %}#ef4444{% else %}#a78bfa{% endif %};
+                                font-weight: 600;
+                            ">
+                                {% if project.status == 'completed' %}✓ Completed
+                                {% elif project.status == 'in_progress' %}◐ In Progress
+                                {% elif project.status == 'on_hold' %}⏸ On Hold
+                                {% else %}📋 Planned{% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <div style="color: #cbd5e1; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em;">Tasks</div>
+                            <div style="color: #f8fafc; font-weight: 600;">{{ project.tasks.count }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem; flex-direction: column;">
+                    <a href="{% url 'project_detail' project.id %}" class="btn" style="
+                        padding: 0.5rem 1rem;
+                        background: rgba(124, 58, 237, 0.2);
+                        border: 1px solid rgba(124, 58, 237, 0.5);
+                        color: #a78bfa;
+                        text-decoration: none;
+                        border-radius: 6px;
+                        font-size: 0.875rem;
+                        text-align: center;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+                    "
+                    onmouseover="this.style.background='rgba(124, 58, 237, 0.3)';"
+                    onmouseout="this.style.background='rgba(124, 58, 237, 0.2)';">
+                        ✎ Manage
+                    </a>
+                    <button class="btn" onclick="deleteProject({{ project.id }}, '{{ project.title|escapejs }}')" style="
+                        padding: 0.5rem 1rem;
+                        background: rgba(239, 68, 68, 0.2);
+                        border: 1px solid rgba(239, 68, 68, 0.5);
+                        color: #ef4444;
+                        border-radius: 6px;
+                        font-size: 0.875rem;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+                    "
+                    onmouseover="this.style.background='rgba(239, 68, 68, 0.3)';"
+                    onmouseout="this.style.background='rgba(239, 68, 68, 0.2)';">
+                        🗑 Delete
+                    </button>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div style="
+                width: 100%;
+                height: 8px;
+                background: rgba(0, 0, 0, 0.3);
+                border-radius: 4px;
+                overflow: hidden;
+            ">
+                <div style="
+                    height: 100%;
+                    background: linear-gradient(90deg, #a78bfa 0%, #8b5cf6 100%);
+                    width: {{ project.get_progress_percentage }}%;
+                    transition: width 0.3s ease;
+                "></div>
+            </div>
+            <div style="
+                color: #cbd5e1;
+                font-size: 0.75rem;
+                margin-top: 0.5rem;
+                text-align: right;
+            ">
+                {{ project.get_progress_percentage }}% scheduled
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">📭</div>
+    <p>No projects yet. <a href="{% url 'create_project' %}" style="color: #a78bfa; text-decoration: underline;">Create one to get started!</a></p>
+</div>
+{% endif %}
+
+<script>
+function deleteProject(projectId, projectTitle) {
+    if (confirm(`Delete project "${projectTitle}"? This cannot be undone.`)) {
+        fetch(`/api/projects/${projectId}/delete/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.showToast('Project deleted successfully!', 'success', 2000);
+                setTimeout(() => window.location.reload(), 600);
+            } else {
+                window.showToast('Error deleting project: ' + data.error, 'error', 4000);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            window.showToast('Error deleting project', 'error', 4000);
+        });
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+
+{% endblock %}

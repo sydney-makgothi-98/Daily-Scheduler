@@ -1,0 +1,470 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}{{ project.title }} - Projects{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'projects_list' %}" class="btn btn-secondary" style="display: inline-block;">← Back to Projects</a>
+</div>
+
+<!-- Project Header -->
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: start; gap: 2rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+        <div style="flex: 1;">
+            <h2 class="section-title light" style="margin: 0 0 0.5rem 0;">{{ project.title }}</h2>
+            <p style="color: #cbd5e1; margin: 0;">{{ project.start_date|date:"M d, Y" }} - {{ project.end_date|date:"M d, Y" }}</p>
+        </div>
+        <div style="display: flex; gap: 1rem;">
+            <button onclick="toggleEditProject()" class="btn btn-primary" style="padding: 0.75rem 1.5rem;">
+                ✎ Edit
+            </button>
+            <button onclick="if(confirm('Generate schedule?')) generateSchedule()" class="btn btn-primary" style="
+                padding: 0.75rem 1.5rem;
+                background: rgba(16, 185, 129, 0.2);
+                border: 1px solid rgba(16, 185, 129, 0.5);
+                color: #10b981;
+            ">
+                ⚡ Generate Schedule
+            </button>
+        </div>
+    </div>
+
+    <!-- Progress -->
+    <div style="margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span style="color: #cbd5e1; font-size: 0.875rem;">Scheduling Progress</span>
+            <span style="color: #a78bfa; font-weight: 600;">{{ progress }}%</span>
+        </div>
+        <div style="
+            width: 100%;
+            height: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            overflow: hidden;
+        ">
+            <div style="
+                height: 100%;
+                background: linear-gradient(90deg, #a78bfa 0%, #8b5cf6 100%);
+                width: {{ progress }}%;
+                transition: width 0.3s ease;
+            "></div>
+        </div>
+    </div>
+
+    <!-- Edit Form (Hidden by default) -->
+    <form id="editProjectForm" style="display: none; gap: 1rem; margin-bottom: 1.5rem;">
+        <div>
+            <input type="text" id="editTitle" value="{{ project.title }}" style="
+                width: 100%;
+                padding: 0.75rem;
+                border: 1px solid rgba(124, 58, 237, 0.3);
+                border-radius: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                color: #f8fafc;
+            ">
+        </div>
+        <div>
+            <textarea id="editDescription" style="
+                width: 100%;
+                padding: 0.75rem;
+                border: 1px solid rgba(124, 58, 237, 0.3);
+                border-radius: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                color: #f8fafc;
+                min-height: 80px;
+            ">{{ project.description }}</textarea>
+        </div>
+        <div>
+            <select id="editStatus" style="
+                width: 100%;
+                padding: 0.75rem;
+                border: 1px solid rgba(124, 58, 237, 0.3);
+                border-radius: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                color: #f8fafc;
+            ">
+                <option value="planned" {% if project.status == 'planned' %}selected{% endif %}>Planned</option>
+                <option value="in_progress" {% if project.status == 'in_progress' %}selected{% endif %}>In Progress</option>
+                <option value="on_hold" {% if project.status == 'on_hold' %}selected{% endif %}>On Hold</option>
+                <option value="completed" {% if project.status == 'completed' %}selected{% endif %}>Completed</option>
+            </select>
+        </div>
+        <div style="display: flex; gap: 1rem;">
+            <button type="button" onclick="saveProjectChanges()" class="btn btn-success">✓ Save</button>
+            <button type="button" onclick="toggleEditProject()" class="btn btn-secondary">Cancel</button>
+        </div>
+    </form>
+</div>
+
+<!-- Tasks Management -->
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <h3 class="section-title light" style="margin-bottom: 1.5rem;">✓ Project Tasks</h3>
+
+    <div id="tasksList" style="display: grid; gap: 1rem; margin-bottom: 1.5rem;">
+        {% for task in tasks %}
+        <div class="project-task-item" data-task-id="{{ task.id }}" style="
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        ">
+            <div style="flex: 1;">
+                <div style="font-weight: 600; color: #f8fafc; margin-bottom: 0.25rem;">{{ task.title }}</div>
+                <div style="color: #cbd5e1; font-size: 0.875rem;">{{ task.duration_hours }} hours per session</div>
+                {% if task.description %}
+                <div style="color: #a78bfa; font-size: 0.75rem; margin-top: 0.5rem;">{{ task.description }}</div>
+                {% endif %}
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="button" onclick="openScheduleForm({{ task.id }})" class="btn" style="
+                    padding: 0.5rem 1rem;
+                    background: rgba(124, 58, 237, 0.2);
+                    border: 1px solid rgba(124, 58, 237, 0.5);
+                    color: #a78bfa;
+                    border-radius: 6px;
+                    font-size: 0.875rem;
+                    cursor: pointer;
+                ">
+                    ⏰ Schedule
+                </button>
+                <button type="button" onclick="deleteTask({{ task.id }})" class="btn" style="
+                    padding: 0.5rem 1rem;
+                    background: rgba(239, 68, 68, 0.2);
+                    border: 1px solid rgba(239, 68, 68, 0.5);
+                    color: #ef4444;
+                    border-radius: 6px;
+                    font-size: 0.875rem;
+                    cursor: pointer;
+                ">
+                    🗑
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Add Task Form -->
+    <form id="addTaskForm" style="display: flex; flex-direction: column; gap: 1rem; padding: 1rem; background: rgba(124, 58, 237, 0.1); border-radius: 8px; border: 1px dashed rgba(124, 58, 237, 0.3);">
+        <h4 style="color: #a78bfa; margin: 0;">➕ Add New Task</h4>
+        <input type="text" id="taskTitle" placeholder="Task title" required style="
+            padding: 0.75rem;
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.2);
+            color: #f8fafc;
+        ">
+        <input type="number" id="taskDuration" placeholder="Duration (hours)" min="0.5" step="0.5" value="1" style="
+            padding: 0.75rem;
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.2);
+            color: #f8fafc;
+        ">
+        <textarea id="taskDescription" placeholder="Description (optional)" style="
+            padding: 0.75rem;
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.2);
+            color: #f8fafc;
+            min-height: 60px;
+        "></textarea>
+        <button type="button" onclick="addTask()" class="btn btn-primary">✓ Add Task</button>
+    </form>
+</div>
+
+<!-- Schedule Form (Modal-like) -->
+<div id="scheduleFormContainer" style="display: none; margin-bottom: 2rem;">
+    <div class="glass-card">
+        <h3 class="section-title light" style="margin-bottom: 1rem;">⏰ Schedule Task</h3>
+
+        <form id="scheduleForm" style="display: flex; flex-direction: column; gap: 1rem;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div>
+                    <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">Day of Week</label>
+                    <select id="scheduleDay" required style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid rgba(124, 58, 237, 0.3);
+                        border-radius: 6px;
+                        background: rgba(0, 0, 0, 0.2);
+                        color: #f8fafc;
+                    ">
+                        <option value="0">Monday</option>
+                        <option value="1">Tuesday</option>
+                        <option value="2">Wednesday</option>
+                        <option value="3">Thursday</option>
+                        <option value="4">Friday</option>
+                        <option value="5">Saturday</option>
+                        <option value="6">Sunday</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">Start Time</label>
+                    <input type="time" id="scheduleTime" required style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid rgba(124, 58, 237, 0.3);
+                        border-radius: 6px;
+                        background: rgba(0, 0, 0, 0.2);
+                        color: #f8fafc;
+                    ">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div>
+                    <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">Duration (hours)</label>
+                    <input type="number" id="scheduleDuration" min="0.5" step="0.5" value="1" style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid rgba(124, 58, 237, 0.3);
+                        border-radius: 6px;
+                        background: rgba(0, 0, 0, 0.2);
+                        color: #f8fafc;
+                    ">
+                </div>
+                <div>
+                    <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">How many weeks?</label>
+                    <input type="number" id="scheduleWeeks" min="1" value="1" style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid rgba(124, 58, 237, 0.3);
+                        border-radius: 6px;
+                        background: rgba(0, 0, 0, 0.2);
+                        color: #f8fafc;
+                    ">
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem;">
+                <button type="button" onclick="saveSchedule()" class="btn btn-success">✓ Create Schedule</button>
+                <button type="button" onclick="closeScheduleForm()" class="btn btn-secondary">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Gantt Chart -->
+<div class="glass-card">
+    <h3 class="section-title light" style="margin-bottom: 1.5rem;">📊 Gantt Chart</h3>
+    <div id="ganttContainer" style="
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 8px;
+        padding: 1.5rem;
+        overflow-x: auto;
+        min-height: 300px;
+    ">
+        <!-- Gantt chart will be rendered here -->
+        {% if tasks %}
+            <div style="color: #cbd5e1; text-align: center; padding: 2rem;">
+                Gantt chart visualization showing project timeline and task schedules
+            </div>
+        {% else %}
+            <div style="color: #cbd5e1; text-align: center; padding: 2rem;">
+                Add tasks and create schedules to visualize the Gantt chart
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+const projectId = {{ project.id }};
+let currentTaskId = null;
+
+function toggleEditProject() {
+    const form = document.getElementById('editProjectForm');
+    form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+}
+
+function saveProjectChanges() {
+    const formData = {
+        title: document.getElementById('editTitle').value,
+        description: document.getElementById('editDescription').value,
+        status: document.getElementById('editStatus').value
+    };
+
+    fetch(`/projects/${projectId}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: new FormData(Object.entries(formData).reduce((f, [k, v]) => {
+            f.append(k, v);
+            return f;
+        }, new FormData()))
+    })
+    .then(response => response.text())
+    .then(() => {
+        window.showToast('Project updated!', 'success', 2000);
+        setTimeout(() => window.location.reload(), 600);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        window.showToast('Error updating project', 'error', 3000);
+    });
+}
+
+function addTask() {
+    const title = document.getElementById('taskTitle').value.trim();
+    const duration = parseFloat(document.getElementById('taskDuration').value);
+    const description = document.getElementById('taskDescription').value.trim();
+
+    if (!title || duration <= 0) {
+        window.showToast('Please fill in task title and duration', 'warning', 2000);
+        return;
+    }
+
+    fetch(`/api/projects/${projectId}/tasks/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            title,
+            duration_hours: duration,
+            description
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.showToast('Task added!', 'success', 2000);
+            setTimeout(() => window.location.reload(), 600);
+        } else {
+            throw new Error(data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        window.showToast('Error adding task: ' + error.message, 'error', 3000);
+    });
+}
+
+function deleteTask(taskId) {
+    if (confirm('Delete this task?')) {
+        fetch(`/api/projects/tasks/${taskId}/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.showToast('Task deleted!', 'success', 2000);
+                setTimeout(() => window.location.reload(), 600);
+            } else {
+                throw new Error(data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            window.showToast('Error deleting task', 'error', 3000);
+        });
+    }
+}
+
+function openScheduleForm(taskId) {
+    currentTaskId = taskId;
+    document.getElementById('scheduleFormContainer').style.display = 'block';
+    document.getElementById('scheduleFormContainer').scrollIntoView({ behavior: 'smooth' });
+}
+
+function closeScheduleForm() {
+    document.getElementById('scheduleFormContainer').style.display = 'none';
+    currentTaskId = null;
+}
+
+function saveSchedule() {
+    if (!currentTaskId) return;
+
+    const scheduleData = {
+        day_of_week: parseInt(document.getElementById('scheduleDay').value),
+        start_time: document.getElementById('scheduleTime').value,
+        duration_hours: parseFloat(document.getElementById('scheduleDuration').value),
+        weeks: parseInt(document.getElementById('scheduleWeeks').value)
+    };
+
+    fetch(`/api/projects/tasks/${currentTaskId}/schedules/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify(scheduleData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.showToast('Schedule created!', 'success', 2000);
+            closeScheduleForm();
+            setTimeout(() => window.location.reload(), 600);
+        } else {
+            throw new Error(data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        window.showToast('Error creating schedule: ' + error.message, 'error', 3000);
+    });
+}
+
+function generateSchedule() {
+    const taskIds = Array.from(document.querySelectorAll('.project-task-item')).map(el => parseInt(el.dataset.taskId));
+
+    if (taskIds.length === 0) {
+        window.showToast('No tasks to schedule', 'warning', 2000);
+        return;
+    }
+
+    fetch(`/api/projects/${projectId}/generate/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({ task_ids: taskIds })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            let message = `✓ Generated ${data.created} recurring tasks!`;
+            if (data.conflicts && data.conflicts.length > 0) {
+                message += `\n\n⚠️ ${data.conflicts.length} conflicts detected (check console for details)`;
+                console.warn('Schedule Conflicts:', data.conflicts);
+            }
+            window.showToast(message, 'success', 4000);
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            throw new Error(data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        window.showToast('Error generating schedule: ' + error.message, 'error', 4000);
+    });
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+
+{% endblock %}

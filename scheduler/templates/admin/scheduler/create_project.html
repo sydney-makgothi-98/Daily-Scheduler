@@ -1,0 +1,194 @@
+{% extends "admin/scheduler/base.html" %}
+
+{% block title %}Create Project - Task Scheduler{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'projects_list' %}" class="btn btn-secondary" style="display: inline-block;">← Back to Projects</a>
+</div>
+
+<h2 class="section-title">➕ Create New Project</h2>
+
+<div class="glass-card" style="max-width: 700px; margin-bottom: 2rem;">
+    <form id="projectForm" method="post" style="display: flex; flex-direction: column; gap: 1.5rem;">
+        {% csrf_token %}
+
+        <!-- Project Title -->
+        <div>
+            <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                📝 Project Title * <span style="color: #94a3b8; font-weight: 400;">(required)</span>
+            </label>
+            <input type="text" id="title" name="title" required style="
+                width: 100%;
+                padding: 0.75rem;
+                border: 1px solid rgba(124, 58, 237, 0.3);
+                border-radius: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                color: #f8fafc;
+                font-size: 1rem;
+            " placeholder="e.g., Website Redesign">
+        </div>
+
+        <!-- Description -->
+        <div>
+            <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                📄 Description (Optional)
+            </label>
+            <textarea id="description" name="description" style="
+                width: 100%;
+                padding: 0.75rem;
+                border: 1px solid rgba(124, 58, 237, 0.3);
+                border-radius: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                color: #f8fafc;
+                font-size: 1rem;
+                font-family: inherit;
+                resize: vertical;
+                min-height: 100px;
+            " placeholder="Add project details and goals..."></textarea>
+        </div>
+
+        <!-- Dates -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+                <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                    📅 Start Date *
+                </label>
+                <input type="date" id="start_date" name="start_date" required style="
+                    width: 100%;
+                    padding: 0.75rem;
+                    border: 1px solid rgba(124, 58, 237, 0.3);
+                    border-radius: 8px;
+                    background: rgba(0, 0, 0, 0.2);
+                    color: #f8fafc;
+                    font-size: 1rem;
+                ">
+            </div>
+
+            <div>
+                <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                    📅 End Date *
+                </label>
+                <input type="date" id="end_date" name="end_date" required style="
+                    width: 100%;
+                    padding: 0.75rem;
+                    border: 1px solid rgba(124, 58, 237, 0.3);
+                    border-radius: 8px;
+                    background: rgba(0, 0, 0, 0.2);
+                    color: #f8fafc;
+                    font-size: 1rem;
+                ">
+            </div>
+        </div>
+
+        <!-- Status -->
+        <div>
+            <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                🎯 Status
+            </label>
+            <select id="status" name="status" style="
+                width: 100%;
+                padding: 0.75rem;
+                border: 1px solid rgba(124, 58, 237, 0.3);
+                border-radius: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                color: #f8fafc;
+                font-size: 1rem;
+                cursor: pointer;
+            ">
+                <option value="planned">📋 Planned</option>
+                <option value="in_progress">◐ In Progress</option>
+                <option value="on_hold">⏸ On Hold</option>
+                <option value="completed">✓ Completed</option>
+            </select>
+        </div>
+
+        <!-- Buttons -->
+        <div style="display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;">
+            <button type="submit" class="btn btn-primary" id="submitBtn">
+                ➕ Create Project
+            </button>
+            <a href="{% url 'projects_list' %}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.getElementById('projectForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const formData = {
+        title: document.getElementById('title').value,
+        description: document.getElementById('description').value,
+        start_date: document.getElementById('start_date').value,
+        end_date: document.getElementById('end_date').value,
+        status: document.getElementById('status').value
+    };
+
+    // Validate dates
+    const startDate = new Date(formData.start_date);
+    const endDate = new Date(formData.end_date);
+
+    if (startDate >= endDate) {
+        window.showToast('End date must be after start date', 'error', 3000);
+        return;
+    }
+
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ Creating...';
+
+    fetch('/projects/create/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.showToast(data.message, 'success', 2000);
+            setTimeout(() => {
+                window.location.href = `/projects/${data.project_id}/`;
+            }, 600);
+        } else {
+            throw new Error(data.error || 'Failed to create project');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        window.showToast('Error: ' + error.message, 'error', 4000);
+        submitBtn.disabled = false;
+        submitBtn.textContent = '➕ Create Project';
+    });
+});
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Set default dates (today and 30 days from now)
+document.addEventListener('DOMContentLoaded', function() {
+    const today = new Date().toISOString().split('T')[0];
+    const in30Days = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    document.getElementById('start_date').value = today;
+    document.getElementById('end_date').value = in30Days;
+});
+</script>
+
+{% endblock %}

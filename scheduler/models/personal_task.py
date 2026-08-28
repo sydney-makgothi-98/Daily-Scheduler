@@ -262,3 +262,172 @@ class PrayerCompletion(models.Model):
     def __str__(self) -> str:
         status = "✓" if self.is_completed else "✗"
         return f"{status} {self.get_prayer_name_display()} ({self.date})"
+
+
+class ProjectStatus(models.TextChoices):
+    PLANNED = "planned", _("Planned")
+    IN_PROGRESS = "in_progress", _("In Progress")
+    COMPLETED = "completed", _("Completed")
+    ON_HOLD = "on_hold", _("On Hold")
+
+
+class Project(models.Model):
+    title = models.CharField(
+        _("title"),
+        max_length=255,
+        help_text=_("Project title")
+    )
+    description = models.TextField(
+        _("description"),
+        blank=True,
+        null=True,
+        help_text=_("Project description and notes")
+    )
+    start_date = models.DateField(
+        _("start date"),
+        help_text=_("Project start date")
+    )
+    end_date = models.DateField(
+        _("end date"),
+        help_text=_("Project end date")
+    )
+    status = models.CharField(
+        _("status"),
+        max_length=20,
+        choices=ProjectStatus.choices,
+        default=ProjectStatus.PLANNED,
+        help_text=_("Current project status")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-start_date"]
+        verbose_name = _("Project")
+        verbose_name_plural = _("Projects")
+        indexes = [
+            models.Index(fields=["status"]),
+            models.Index(fields=["-start_date"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.start_date} - {self.end_date})"
+
+    def get_progress_percentage(self):
+        """Calculate project progress based on task scheduling"""
+        total_days = (self.end_date - self.start_date).days + 1
+        if total_days <= 0:
+            return 0
+        scheduled_tasks = self.tasks.filter(is_scheduled=True).count()
+        total_tasks = self.tasks.count()
+        if total_tasks == 0:
+            return 0
+        return int((scheduled_tasks / total_tasks) * 100)
+
+
+class ProjectTask(models.Model):
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="tasks",
+        help_text=_("Parent project")
+    )
+    title = models.CharField(
+        _("title"),
+        max_length=255,
+        help_text=_("Task title")
+    )
+    description = models.TextField(
+        _("description"),
+        blank=True,
+        null=True,
+        help_text=_("Task description")
+    )
+    duration_hours = models.FloatField(
+        _("duration (hours)"),
+        default=1.0,
+        help_text=_("Duration in hours per work session")
+    )
+    order = models.PositiveIntegerField(
+        _("order"),
+        default=0,
+        help_text=_("Order within project")
+    )
+    is_scheduled = models.BooleanField(
+        _("is scheduled"),
+        default=False,
+        help_text=_("Whether this task has been scheduled in the main scheduler")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order"]
+        verbose_name = _("Project Task")
+        verbose_name_plural = _("Project Tasks")
+        indexes = [
+            models.Index(fields=["project", "order"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.project.title})"
+
+
+class ProjectSchedule(models.Model):
+    WEEKDAY_CHOICES = [
+        (0, _("Monday")),
+        (1, _("Tuesday")),
+        (2, _("Wednesday")),
+        (3, _("Thursday")),
+        (4, _("Friday")),
+        (5, _("Saturday")),
+        (6, _("Sunday")),
+    ]
+
+    project_task = models.ForeignKey(
+        ProjectTask,
+        on_delete=models.CASCADE,
+        related_name="schedules",
+        help_text=_("Associated project task")
+    )
+    day_of_week = models.IntegerField(
+        _("day of week"),
+        choices=WEEKDAY_CHOICES,
+        help_text=_("Day of week to schedule (0=Monday, 6=Sunday)")
+    )
+    start_time = models.TimeField(
+        _("start time"),
+        help_text=_("Task start time")
+    )
+    duration_hours = models.FloatField(
+        _("duration (hours)"),
+        default=1.0,
+        help_text=_("Duration in hours")
+    )
+    weeks = models.PositiveIntegerField(
+        _("weeks"),
+        default=1,
+        help_text=_("How many weeks to repeat")
+    )
+    is_active = models.BooleanField(
+        _("is active"),
+        default=True,
+        help_text=_("Whether this schedule is active")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("Project Schedule")
+        verbose_name_plural = _("Project Schedules")
+        unique_together = ["project_task", "day_of_week"]
+
+    def __str__(self) -> str:
+        day_name = dict(self.WEEKDAY_CHOICES)[self.day_of_week]
+        return f"{self.project_task.title} - {day_name} {self.start_time}"
+
+    def get_end_time(self):
+        from datetime import datetime, timedelta, time
+        start = datetime.combine(datetime.today(), self.start_time)
+        end = start + timedelta(hours=self.duration_hours)
+        return end.time()

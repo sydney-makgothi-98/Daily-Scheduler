@@ -56,3 +56,14 @@ urlpatterns += [
     path("api/analytics/subtask-chart-data/", views.get_subtask_chart_data_api, name="get_subtask_chart_data_api"),
     path("api/analytics/prayer-chart-data/", views.get_prayer_chart_data_api, name="get_prayer_chart_data_api"),
 ]
+
+urlpatterns += [
+    path("projects/", views.projects_list, name="projects_list"),
+    path("projects/create/", views.create_project, name="create_project"),
+    path("projects/<int:project_id>/", views.project_detail, name="project_detail"),
+    path("api/projects/<int:project_id>/tasks/", views.create_project_task, name="create_project_task"),
+    path("api/projects/tasks/<int:task_id>/", views.delete_project_task, name="delete_project_task"),
+    path("api/projects/tasks/<int:task_id>/schedules/", views.create_schedule, name="create_schedule"),
+    path("api/projects/<int:project_id>/generate/", views.generate_schedule, name="generate_schedule"),
+    path("api/projects/<int:project_id>/delete/", views.delete_project, name="delete_project"),
+]

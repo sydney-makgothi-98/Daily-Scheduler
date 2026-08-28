@@ -32,6 +32,14 @@ __all__ = [
     "get_task_subtasks",
     "get_yesterday_tasks",
     "copy_tasks_from_yesterday",
+    "projects_list",
+    "create_project",
+    "project_detail",
+    "create_project_task",
+    "delete_project_task",
+    "create_schedule",
+    "generate_schedule",
+    "delete_project",
     "analytics_dashboard",
     "get_chart_data_api",
     "get_subtask_chart_data_api",
@@ -67,6 +75,16 @@ from .personal_task_views import (
     get_task_subtasks,
     get_yesterday_tasks,
     copy_tasks_from_yesterday,
+)
+from .project_views import (
+    projects_list,
+    create_project,
+    project_detail,
+    create_project_task,
+    delete_project_task,
+    create_schedule,
+    generate_schedule,
+    delete_project,
 )
 from .analytics_views import (
     analytics_dashboard,

@@ -1,7 +1,16 @@
 from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
-from scheduler.models import PersonalTask, PrayerSchedule, TaskCompletion, SubTask, PrayerCompletion
+from scheduler.models import (
+    AlarmSetting,
+    DayPlan,
+    PersonalTask,
+    PrayerCompletion,
+    PrayerSchedule,
+    RecurringTask,
+    SubTask,
+    TaskCompletion,
+)
 
 
 class SubTaskInline(admin.TabularInline):
@@ -13,15 +22,15 @@ class SubTaskInline(admin.TabularInline):
 
 @admin.register(PersonalTask)
 class PersonalTaskAdmin(admin.ModelAdmin):
-    list_display = ("title", "date", "start_time", "end_time", "category", "is_completed", "created_at")
-    list_filter = ("category", "date", "is_completed", "created_at")
+    list_display = ("title", "date", "start_time", "end_time", "category", "task_type", "is_completed", "created_at")
+    list_filter = ("category", "task_type", "date", "is_completed", "created_at")
     search_fields = ("title", "description")
     readonly_fields = ("created_at", "updated_at")
     inlines = [SubTaskInline]
     date_hierarchy = "date"
     fieldsets = (
         (_("Task Information"), {
-            "fields": ("title", "description", "category")
+            "fields": ("title", "description", "category", "task_type")
         }),
         (_("Schedule"), {
             "fields": ("date", "start_time", "end_time")
@@ -92,3 +101,22 @@ class PrayerCompletionAdmin(admin.ModelAdmin):
             "classes": ("collapse",)
         }),
     )
+
+
+@admin.register(RecurringTask)
+class RecurringTaskAdmin(admin.ModelAdmin):
+    list_display = ("title", "weekdays", "start_time", "end_time", "task_type", "is_active")
+    list_filter = ("task_type", "is_active")
+    search_fields = ("title",)
+
+
+@admin.register(DayPlan)
+class DayPlanAdmin(admin.ModelAdmin):
+    list_display = ("date", "day_type")
+    list_filter = ("day_type",)
+    date_hierarchy = "date"
+
+
+@admin.register(AlarmSetting)
+class AlarmSettingAdmin(admin.ModelAdmin):
+    list_display = ("enabled", "break_alarm", "prayer_alarm", "task_alarm", "snooze_minutes", "volume")

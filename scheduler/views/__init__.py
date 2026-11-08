@@ -44,6 +44,16 @@ __all__ = [
     "get_chart_data_api",
     "get_subtask_chart_data_api",
     "get_prayer_chart_data_api",
+    "alarms_today_api",
+    "alarm_settings",
+    "home",
+    "focus_day",
+    "set_day_type",
+    "recurring_list",
+    "recurring_delete",
+    "recurring_toggle",
+    "quick_add_api",
+    "carry_over_api",
 ]
 
 from .job_views import job_action, job_detail
@@ -92,3 +102,6 @@ from .analytics_views import (
     get_subtask_chart_data_api,
     get_prayer_chart_data_api,
 )
+from .alarm_views import alarms_today_api, alarm_settings
+from .mode_views import home, focus_day, set_day_type
+from .automation_views import recurring_list, recurring_delete, recurring_toggle, quick_add_api, carry_over_api

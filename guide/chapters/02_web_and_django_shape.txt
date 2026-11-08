@@ -1,0 +1,291 @@
+## 3. How the web works (the minimum you must know)
+
+Django is easy once you hold one picture in your head: **a website is a function that turns a request into a response.** This chapter builds that picture.
+
+### 3.1 Client and server
+
+Your browser is the **client**. It asks for things. A **server** is a program waiting for those questions. In this project the server is Django, running inside the `.exe` (or started with `manage.py runserver` while developing). Both live on your own PC, so the address is `127.0.0.1` (also called `localhost`), meaning "this computer".
+
+[[diagram:http_exchange]]
+
+### 3.2 What a request contains
+
+| Part | Example | Used for |
+| Method | GET, POST | GET = "show me", POST = "change something" |
+| Path | /calendar/2026/11/9/ | Which page or action |
+| Query string | ?year=2026&month=11 | Optional extra values (see calendar_view) |
+| Headers | Cookie, Content-Type | Who you are, what format the body is |
+| Body | title=Gym&date=2026-11-09 | Form data, or JSON from fetch() |
+
+!why: Browsers send **GET** when you click a link or type a URL, and **POST** when a form changes data. Django code branches on `request.method` for exactly this reason: the same URL shows an empty form on GET and processes it on POST (see `create_personal_task`).
+
+!without: If a delete button used GET, a search engine or a browser pre-fetch could delete your tasks just by visiting links. That is why `delete_personal_task` is limited to POST with `@require_http_methods(["POST"])`.
+
+### 3.3 What a response contains
+
+A **status code** (200 OK, 302 redirect, 400 bad request, 404 not found, 500 server error), **headers**, and a **body** (usually HTML or JSON). Memorise four codes: **200** worked, **302** go somewhere else (used after a successful form), **400** your request was wrong (used by the JSON endpoints), **404** nothing there.
+
+### 3.4 Stateless: the server forgets you
+
+Every request stands alone. The server does not remember the previous one. To remember things Django uses:
+
+- the **database** (tasks, prayers, alarm settings) for data you want to keep,
+- **sessions and cookies** for "who is this browser" (used by the admin login and by the `messages` banners),
+- **browser storage** (`localStorage`) for small client-only things (the alarm "armed" flag in `alarm.js`).
+
+### 3.5 HTML, CSS, JavaScript: what the browser does with the answer
+
+The server sends HTML text. The browser draws it, applies CSS, and runs JavaScript. JavaScript can then make *more* requests (`fetch(...)`) without reloading the page. This split is the reason the project has Python files **and** `<script>` blocks.
+
+[[diagram:request_cycle]]
+
+!tip: Open your browser's developer tools (F12), go to the **Network** tab, and reload any page of the app. Every row is one request/response pair exactly as drawn above. Nothing in Django will feel magical once you have watched this.
+
+## 4. Django's shape: projects, apps, settings, MTV
+
+### 4.1 Project vs app
+
+A Django **project** is the whole program: its settings, its root URL table, how it is started. A Django **app** is a reusable package that does one job. A project is made of apps.
+
+[[diagram:project_vs_app]]
+
+In this repository:
+
+- `testproject/` is a small **project** used for development and tests (and `desktop/` is a second project configuration used by the `.exe`).
+- `scheduler/` is the **app**. It contains the upstream job-scheduler *and* your planner code.
+
+!why: Splitting into apps lets you reuse one app in many projects. The upstream author publishes `scheduler` as a library; your planner rides inside it. The `desktop/` settings reuse the same app with different settings (SQLite in AppData, no real Redis). One app, two projects: that is the benefit.
+
+!alt: For a first small site you can put everything in one app. Many teams keep one app per business area (users, billing, reports) so each stays small enough to understand.
+
+### 4.2 The files `startproject` creates
+
+```text
+mysite/
+  manage.py            <- the command-line tool for this project
+  mysite/
+    settings.py        <- every configuration switch
+    urls.py            <- the root URL table
+    wsgi.py            <- how a web server talks to Django
+    asgi.py            <- same, for async servers
+```
+
+`manage.py` is a tiny wrapper that points Python at your settings and then runs a Django command. Commands you will use constantly:
+
+| Command | What it does |
+| python manage.py runserver | Start a development server that reloads on code changes. |
+| python manage.py makemigrations | Write migration files from model changes. |
+| python manage.py migrate | Apply migrations to the database. |
+| python manage.py createsuperuser | Make an admin login. |
+| python manage.py test | Run the tests. |
+| python manage.py shell | Python prompt with Django loaded (try the ORM here). |
+| python manage.py collectstatic | Gather CSS/JS into one folder for deployment. |
+
+### 4.3 settings.py: the control panel
+
+`settings.py` is just a Python file of UPPERCASE variables. Django reads them by name. The important ones:
+
+```python
+INSTALLED_APPS = [                       # which apps are switched on
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "scheduler.apps.SchedulerConfig",    # your app
+]
+MIDDLEWARE = [ ... ]                     # layers around every request
+ROOT_URLCONF = "testproject.urls"        # where the URL table lives
+TEMPLATES = [ ... ]                      # how to find and render HTML
+DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
+STATIC_URL = "/static/"                  # URL prefix for CSS/JS files
+DEBUG = True                             # development helper pages; NEVER True in production
+SECRET_KEY = "..."                       # signs cookies and sessions
+ALLOWED_HOSTS = ["127.0.0.1"]            # which hostnames may reach the app
+TIME_ZONE, USE_TZ                        # how dates and times are stored
+```
+
+!why: One settings file means one place to look. Because it is plain Python it can compute values, read environment variables, or (as `desktop/settings.py` does) create and read a secret key file on first run.
+
+!without: With `DEBUG = True` in a deployed site, an error shows your source code, settings and database queries to anyone. With a leaked `SECRET_KEY`, an attacker can forge login sessions. That is why `desktop/settings.py` sets `DEBUG = False` and generates a different secret per installation.
+
+### 4.4 MTV: Model, Template, View
+
+[[diagram:mtv]]
+
+- **Model** (`models.py`): what data exists and its rules.
+- **View** (`views.py`): the decision-making function for one URL.
+- **Template** (`.html`): how the result looks.
+- **URLconf** (`urls.py`): a lookup table from URL to view.
+
+Memory trick: **U**rl picks the **V**iew, the View asks the **M**odel, then hands the data to a **T**emplate. U-V-M-T.
+
+### 4.5 The life of one request, end to end
+
+[[diagram:mvt_example]]
+
+1. You open `/focus/`.
+2. Django's URL table (`scheduler/urls.py`) finds `path("focus/", views.focus_day, name="focus_today")`.
+3. `focus_day(request)` runs. It asks the ORM for focus tasks and prayers.
+4. It calls `render(request, "admin/scheduler/focus_day.html", context)`.
+5. The template is filled in and returned as the response.
+6. The browser draws it and runs the page's JavaScript.
+
+### 4.6 Middleware: layers around every request
+
+[[diagram:middleware]]
+
+Middleware are small classes listed in `MIDDLEWARE`. Each can look at the request on the way in and the response on the way out. Built-ins handle security headers, sessions, **CSRF protection**, login state and the `messages` banners. You rarely write your own, but you must know they exist, because "why is my POST rejected with 403?" is almost always the CSRF middleware doing its job.
+
+### 4.7 WSGI: how a real web server talks to Django
+
+A web server such as **waitress** (used by the `.exe`) or gunicorn speaks HTTP. Django speaks Python. **WSGI** is the agreed interface between them: a server calls `application(environ, start_response)` once per request. `wsgi.py` exposes that `application` object. `manage.py runserver` includes a development server; for real use you hand `application` to a production server. That is exactly what `desktop/main.py` does with waitress.
+
+## 5. URLs and views
+
+### 5.1 The URL table
+
+```python
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("calendar/", views.calendar_view, name="calendar_view"),
+    path("calendar/<int:year>/<int:month>/<int:day>/", views.task_data_view, name="task_data_view"),
+]
+```
+
+- `"calendar/"` is the path to match.
+- `<int:year>` captures that part of the URL, converts it to an `int` and passes it to the view as the argument `year`. Other converters: `str`, `slug`, `uuid`, `path`.
+- `name=` gives the route a nickname so you never hard-code URLs.
+
+!why: Naming routes lets templates write `{% url 'task_data_view' year=2026 month=11 day=9 %}` and Python write `reverse("task_data_view", args=[2026, 11, 9])`. If you later change the path to `/day/...`, every link updates itself.
+
+!without: Hard-coded links like `<a href="/calendar/2026/11/9/">` break silently when a URL changes, and nothing warns you until a user clicks.
+
+### 5.2 A view is just a function
+
+```python
+from django.http import HttpResponse
+
+def hello(request):                 # always receives the request first
+    return HttpResponse("Hello")    # always returns a response
+```
+
+That is the whole contract. Everything else in this guide is a more convenient way of building the response.
+
+| Helper | Use it when | Example in this project |
+| render(request, template, context) | you want an HTML page | task_data_view |
+| redirect("name") | after a successful POST | create_personal_task |
+| JsonResponse({...}) | JavaScript is calling | toggle_task_completion |
+| get_object_or_404(Model, id=...) | fetch one row or show a 404 page | edit_personal_task |
+
+### 5.3 The request object
+
+`request.method`, `request.GET["x"]`, `request.POST["x"]`, `request.body` (raw bytes; JSON is read with `json.loads(request.body)`), `request.user`, `request.session`, `request.COOKIES`, `request.FILES`.
+
+### 5.4 Function-based views (FBV) vs class-based views (CBV)
+
+The same page written both ways. This is the pattern the guide repeats for every view in Part II.
+
+**Function-based (what this project uses)**
+
+```python
+def focus_day(request):
+    tasks = PersonalTask.objects.filter(task_type="focus")
+    return render(request, "focus_day.html", {"tasks": tasks})
+```
+
+**Class-based equivalent**
+
+```python
+from django.views.generic import TemplateView
+
+class FocusDay(TemplateView):
+    template_name = "focus_day.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["tasks"] = PersonalTask.objects.filter(task_type="focus")
+        return ctx
+```
+
+In `urls.py` a class is registered with `.as_view()`: `path("focus/", FocusDay.as_view())`.
+
+**Even shorter, for a plain list page**
+
+```python
+from django.views.generic import ListView
+
+class TaskList(ListView):
+    model = PersonalTask               # Django builds the query: PersonalTask.objects.all()
+    template_name = "tasks.html"       # context variable defaults to "object_list"
+```
+
+!alt: Django ships generic views for the common jobs: `ListView` (a list), `DetailView` (one object), `CreateView` / `UpdateView` / `DeleteView` (forms for a model), `TemplateView` (a static page), `RedirectView`. If your page is "list/show/create/edit/delete one model" a CBV can replace 20 lines with 4.
+
+!why: This project uses function views because every view here does something specific (prayer checks, focus limits, breaks, automation). A function reads top to bottom, so a student can follow the logic. CBVs shine when you do the standard thing many times; functions win when each view is a one-off.
+
+!without: Forcing odd logic into a generic view means overriding many hooks (`get_queryset`, `form_valid`, `get_context_data`), which is harder to read than the plain function it replaced.
+
+#### Create/edit/delete as CBVs (the simplified version of PersonalTask CRUD)
+
+```python
+from django.views.generic import CreateView, UpdateView, DeleteView
+from django.urls import reverse_lazy
+
+class TaskCreate(CreateView):
+    model = PersonalTask
+    form_class = PersonalTaskForm             # your validation rules
+    template_name = "create_personal_task.html"
+    success_url = reverse_lazy("calendar_view")
+
+class TaskUpdate(UpdateView):                 # same, but loads an existing row
+    model = PersonalTask
+    form_class = PersonalTaskForm
+    template_name = "create_personal_task.html"
+    success_url = reverse_lazy("calendar_view")
+
+class TaskDelete(DeleteView):
+    model = PersonalTask
+    success_url = reverse_lazy("calendar_view")
+```
+
+Compare with `create_personal_task` and `edit_personal_task`: the function versions add subtasks, auto breaks and a success message, which is why they are longer.
+
+### 5.5 Decorators on views
+
+A decorator wraps a function to add behaviour.
+
+| Decorator | Effect |
+| @require_http_methods(["GET","POST"]) | Reject other methods with 405. |
+| @require_POST / @require_GET | Shorthand for one method. |
+| @login_required | Redirect anonymous users to the login page. |
+| @csrf_exempt | Turn OFF CSRF checking for this view (this project removed the risky ones). |
+
+!tip: A very common bug: you add a decorator but forget its import line. Python then says `NameError: name 'require_POST' is not defined`. The import list at the top of every views file exists to prevent exactly that.
+
+### 5.6 Worked example in another app: a library website
+
+```python
+# urls.py
+urlpatterns = [
+    path("books/", views.book_list, name="book_list"),
+    path("books/<int:pk>/", views.book_detail, name="book_detail"),
+    path("books/<int:pk>/borrow/", views.borrow, name="borrow"),
+]
+
+# views.py
+def book_list(request):
+    return render(request, "books.html", {"books": Book.objects.order_by("title")})
+
+def book_detail(request, pk):
+    book = get_object_or_404(Book, pk=pk)
+    return render(request, "book.html", {"book": book})
+
+@require_POST
+def borrow(request, pk):
+    book = get_object_or_404(Book, pk=pk)
+    book.is_available = False
+    book.save()
+    return redirect("book_detail", pk=pk)
+```
+
+Notice the three shapes: **list** (no argument), **detail** (one id), **action** (POST then redirect). The planner's `task_data_view`, `edit_personal_task` and `toggle_task_completion` are the same three shapes. Spotting that is the "trend" the guide wants you to see.

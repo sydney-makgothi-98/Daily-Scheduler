@@ -1,0 +1,23 @@
+{% extends "admin/scheduler/base.html" %}
+{% block title %}Alarm Settings{% endblock %}
+{% block nav_alarms %}active{% endblock %}
+{% block content %}
+<h2 class="section-title">⏰ Alarm Settings</h2>
+<div class="glass-card" style="max-width:640px">
+  <form method="post">
+    {% csrf_token %}
+    <p style="color:#cbd5e1;margin-bottom:1rem">Alarms ring when a break, prayer or task starts. In the desktop app they ring even when the window is closed.</p>
+    <label style="display:block;margin:.5rem 0"><input type="checkbox" name="enabled" {% if cfg.enabled %}checked{% endif %}> Alarms enabled</label>
+    <label style="display:block;margin:.5rem 0"><input type="checkbox" name="break_alarm" {% if cfg.break_alarm %}checked{% endif %}> Ring when a break starts</label>
+    <label style="display:block;margin:.5rem 0"><input type="checkbox" name="prayer_alarm" {% if cfg.prayer_alarm %}checked{% endif %}> Ring when a prayer starts</label>
+    <label style="display:block;margin:.5rem 0"><input type="checkbox" name="task_alarm" {% if cfg.task_alarm %}checked{% endif %}> Ring when a task starts</label>
+    <hr style="border-color:rgba(255,255,255,.1);margin:1rem 0">
+    <label style="display:block;margin:.5rem 0">Break heads-up (minutes before, 0 = off)<br><input class="form-input" type="number" name="break_lead_minutes" value="{{ cfg.break_lead_minutes }}" min="0" max="30"></label>
+    <label style="display:block;margin:.5rem 0">Prayer heads-up (minutes before, 0 = off)<br><input class="form-input" type="number" name="prayer_lead_minutes" value="{{ cfg.prayer_lead_minutes }}" min="0" max="60"></label>
+    <label style="display:block;margin:.5rem 0">Snooze (minutes)<br><input class="form-input" type="number" name="snooze_minutes" value="{{ cfg.snooze_minutes }}" min="1" max="60"></label>
+    <label style="display:block;margin:.5rem 0">Ring length (seconds)<br><input class="form-input" type="number" name="ring_seconds" value="{{ cfg.ring_seconds }}" min="5" max="600"></label>
+    <label style="display:block;margin:.5rem 0">Volume (0–100)<br><input class="form-input" type="number" name="volume" value="{{ cfg.volume }}" min="0" max="100"></label>
+    <button type="submit" class="btn btn-primary" style="margin-top:1rem">Save</button>
+  </form>
+</div>
+{% endblock %}

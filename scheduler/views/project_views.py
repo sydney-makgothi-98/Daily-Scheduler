@@ -9,6 +9,7 @@ from django.db import models
 import json
 
 from scheduler.models import Project, ProjectTask, ProjectSchedule, ProjectStatus, PersonalTask, TaskCategory
+from scheduler.planning import prayer_conflict
 
 
 @require_http_methods(["GET", "POST"])
@@ -227,11 +228,14 @@ def generate_schedule(request, project_id):
                         end_time__gt=schedule.start_time
                     ).exclude(is_break=True).exists()
 
-                    if conflicting:
+                    # Prayer time is fixed: never schedule over it (end_time wrapping past midnight also counts)
+                    prayer = prayer_conflict(schedule.start_time, end_time) if end_time > schedule.start_time else None
+                    if conflicting or prayer:
                         conflicts.append({
                             "task": project_task.title,
                             "date": target_date.isoformat(),
-                            "time": f"{schedule.start_time.strftime('%H:%M')}-{end_time.strftime('%H:%M')}"
+                            "time": f"{schedule.start_time.strftime('%H:%M')}-{end_time.strftime('%H:%M')}",
+                            "reason": f"overlaps {prayer.get_prayer_name_display()}" if prayer else "overlaps another task",
                         })
                     else:
                         # Create the PersonalTask

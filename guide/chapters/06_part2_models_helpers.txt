@@ -1,0 +1,187 @@
+## 18. The planner's models: scheduler/models/personal_task.py
+
+**What it is.** Every table of the planner. About 530 lines, but only five shapes repeat. Use the ER diagram in chapter 15.1 as a map.
+
+### 18.1 Imports and choice classes
+
+```python
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+```
+
+`models` gives fields. `gettext_lazy as _` marks text as translatable: `_("title")` is looked up in a translation catalogue *when displayed* (that is what "lazy" means), not when the file loads. The project is English-only, but the underscore is a Django convention; it costs nothing and lets you add a language later.
+
+```python
+class TaskCategory(models.TextChoices):
+    NON_NEGOTIABLE = "non_negotiable", _("Non-Negotiable")
+    SECONDARY = "secondary", _("Secondary")
+    FUN = "fun", _("Fun Activity")
+```
+
+Each member: stored value, then label. `TaskCategory.choices` is the list a dropdown needs; `TaskCategory.values` is the list of valid stored strings (used to validate recurring-task input).
+
+`TaskMode` (multi/focus), `PrayerName`, `PrayerCompletionStatus`, `ProjectStatus` follow the identical pattern. **Spot the trend:** every "one of a few options" in the project is a `TextChoices` class.
+
+!why: The name `TaskMode` was chosen because the upstream library already defines `TaskType` (once / repeatable / cron). Importing both under one name would silently replace one with the other. When names collide in a large codebase, rename yours.
+
+!alt: Plain tuples (`CATEGORY_CHOICES = [("a","A"), ...]`) also work, but you lose the named constants.
+
+### 18.2 Constants
+
+```python
+FOCUS_MAX_PER_DAY = 2
+POMODORO_WORK_MINUTES = 50
+POMODORO_BREAK_MINUTES = 10
+```
+
+Rules defined once, imported wherever needed (forms, planning, alarms, views, templates through context). Change 2 to 3 and the whole app follows.
+
+### 18.3 PersonalTask
+
+| Field | Type | Why it exists |
+| title | CharField(255) | what the task is |
+| description | TextField(blank, null) | optional notes |
+| date, start_time, end_time | Date/Time fields | scheduling; times are separate from the date so a recurring or copied task keeps its clock times |
+| category | CharField + TaskCategory | priority label |
+| task_type | CharField + TaskMode, default multi | Multi or Focus |
+| recurring_source | ForeignKey("RecurringTask", SET_NULL) | which template generated it |
+| is_completed | Boolean | ticked off |
+| is_break | Boolean | auto-inserted break rows |
+| parent_task | ForeignKey("self", CASCADE, related_name="breaks") | which task a break belongs to |
+| created_at / updated_at | auto_now_add / auto_now | audit timestamps |
+
+!why: `ForeignKey("RecurringTask")` uses a **string** because `RecurringTask` is defined lower in the file. Python reads top to bottom, so the class does not exist yet; Django resolves the string later.
+
+!without: Writing `ForeignKey(RecurringTask, ...)` above its definition raises `NameError`.
+
+`parent_task = ForeignKey("self")` is a **self-reference**: a row pointing to another row of the same table. Deleting a task cascades to its breaks (`CASCADE`), which is why `edit_personal_task` can delete and regenerate breaks safely.
+
+**Meta**
+
+```python
+ordering = ["date", "start_time"]
+indexes = [Index(fields=["date"]), Index(fields=["category"]), Index(fields=["date","category"]), Index(fields=["date","task_type"])]
+```
+
+Almost every query filters by `date`, so it is indexed; the combined indexes serve the two-column filters used by the Focus-limit check.
+
+**`__str__`** returns `"Title (2026-11-09 10:00:00)"` so the admin and shell show readable text instead of `PersonalTask object (7)`.
+
+**`get_performance_rating()`** counts completed subtasks, converts to a percentage and returns a dict with label and emoji for the UI. It lives on the model because the toggle view, the subtask views and analytics all need it.
+
+!alt: The long `if/elif` ladder could be a lookup table of `(threshold, label)` pairs and a loop; fewer lines, easier to retune.
+
+### 18.4 SubTask, TaskCompletion
+
+`SubTask` is the "many children" shape: `ForeignKey` to its task, `order` for sorting, `Meta.ordering = ["order"]`. `TaskCompletion` is an **event log**: every tick or untick adds a row (never updates one), so analytics can see history. This is the "append-only history" shape.
+
+### 18.5 PrayerSchedule and PrayerCompletion
+
+`PrayerSchedule` has `prayer_name` with `unique=True`: one window per prayer, times editable. `PrayerCompletion` records what happened on a date, with `unique_together = ["prayer_name", "date"]`, so there is at most one row per prayer per day; `status` is prayed / not_yet / missed.
+
+!why: Schedule (what *should* happen daily) and completion (what *did* happen on a date) are separate tables. This is the **template vs occurrence** split; you will meet it again as `RecurringTask` vs `PersonalTask`.
+
+!without: Storing the prayer times inside every day's record would duplicate them 365 times a year, and changing Zhor's time would not change future days.
+
+### 18.6 Project, ProjectTask, ProjectSchedule
+
+A three-level tree: a `Project` has `ProjectTask`s, each with `ProjectSchedule` rows (weekday + start time + weeks). `unique_together = ["project_task", "day_of_week"]` blocks scheduling the same task twice on a weekday; `generate_schedule` then expands these into real `PersonalTask` rows. `ProjectSchedule.get_end_time()` adds `duration_hours` to the start time with `timedelta`.
+
+### 18.7 New in this work: DayPlan, RecurringTask, AlarmSetting
+
+**DayPlan**: `date` (unique) and `day_type`. One row per day *only when you change it*; `DayPlan.type_for(day)` returns the row's type or Multi if none exists. A classmethod keeps that default in one place.
+
+**RecurringTask**: a template with `weekdays` stored as `"0,2,4"` (0 = Monday). Helper methods: `weekday_set()` parses it, `runs_on(day)` combines active flag and weekday, `weekdays_display()` prints "Mon, Wed, Fri".
+
+!alt: A comma-separated string is the simplest storage. The cleaner relational approach is a `ManyToManyField` to a Weekday table, or seven boolean columns. The string was chosen for brevity; its cost is that the database cannot filter by weekday.
+
+**AlarmSetting**: a **singleton**: one row, always `pk=1`, fetched by `AlarmSetting.get()` which uses `get_or_create(pk=1)`. The settings page edits that row.
+
+!why: Storing settings in the database (not a file) means the browser page and the desktop engine read the same values with the same code.
+
+!without: Two sources (a JSON file for the engine, a table for the page) would drift apart.
+
+**Theory link:** chapter 6 (all of it).
+
+### 18.8 scheduler/models/__init__.py
+
+Re-exports every model and constant (`from .personal_task import (...)`, plus `__all__`) so other files can write `from scheduler.models import PersonalTask`. Adding a model means adding it in two places here (the import and `__all__`).
+
+!without: Forgetting the import means `from scheduler.models import RecurringTask` fails, and Django may not detect the model for migrations.
+
+### 18.9 scheduler/admin/personal_task_admin.py and __init__.py
+
+Each `@admin.register(Model)` class configures the admin: `list_display` (columns), `list_filter` (sidebar), `search_fields`, `readonly_fields` (auto timestamps cannot be edited), `fieldsets` (grouped form sections; `"classes": ("collapse",)` hides a group by default), `date_hierarchy` (date drill-down bar), and `inlines = [SubTaskInline]`, which edits subtasks *inside* the task page (`TabularInline`, `extra = 1` shows one blank row). `__init__.py` imports every admin class so Django registers them.
+
+!tip: Adding `task_type` here took two edits (list and fieldsets). If a field is missing from `fieldsets`, the admin simply does not show it.
+
+## 19. The rule modules and forms
+
+These four files hold the *rules* of the app, away from requests. They are the best examples of "thin views, fat helpers".
+
+### 19.1 scheduler/planning.py
+
+```python
+def overlaps(a_start, a_end, b_start, b_end):
+    return a_start < b_end and a_end > b_start
+```
+
+Two time ranges overlap exactly when each starts before the other ends. Because the comparison is strict (`<`, `>`), ranges that merely **touch** (one ends at 13:00, the next starts at 13:00) do not overlap. A test (`test_touching_a_prayer_is_fine`) pins that behaviour.
+
+`prayer_conflict(start, end)` loops over every `PrayerSchedule` and returns the first overlapping one (or `None`). `focus_task_count(day, exclude_pk)` counts focus tasks excluding breaks, and optionally excluding one row: `exclude_pk` is what lets you **edit** an existing focus task without it counting against itself. `focus_slots_left(day)` is `max(0, 2 - count)`.
+
+`auto_insert_breaks(task)` (moved here from the views file) adds a 10-minute break after tasks of 60+ minutes, **shifts it after a prayer** if it would run into one (`break_start = prayer.end_time`), and skips it if another task is in the way.
+
+!why: This function moved out of the views file because three places need it now (views, recurring generation, quick-add), and importing from a views module into an automation module would create a circular import.
+
+!without: With views importing automation and automation importing views, Python raises `ImportError: cannot import name ... (most likely due to a circular import)`.
+
+### 19.2 scheduler/forms.py
+
+`PersonalTaskForm(ModelForm)`: `Meta.fields` lists what the user may edit (note: `date` and `task_type` are included; `is_completed` and `is_break` are not, so a user cannot forge them by editing the HTML). `Meta.widgets` sets the HTML input type and CSS class per field (`type="time"` gives the browser's time picker).
+
+`clean()` runs after all single-field checks pass, and runs these rules **in order**: (1) start before end; (2) **no overlap with a prayer window**; (3) **at most two focus tasks** that day (excluding itself); (4) not in the past; (5) at most three non-negotiable tasks. The first failure raises `ValidationError` and the message appears at the top of the form.
+
+!why: Putting prayer and focus rules in the form's `clean()` means every path that builds this form (the page, the quick-add box) gets them for free.
+
+!without: A rule enforced only in JavaScript is a suggestion; anyone can bypass it. Enforce in Python, optionally mirror in JS for convenience.
+
+`SubTaskForm`, `PrayerCompletionForm` are plain ModelForms with widgets only.
+
+**Theory link:** chapter 7.
+
+### 19.3 scheduler/alarms.py
+
+A small **pure** module: no sound, no windows, no request. `AlarmEvent` is a frozen dataclass (`@dataclass(frozen=True)`: immutable and hashable) with a unique `key`, `kind` (break/prayer/task), `phase` (start or heads_up), title, message and `at`.
+
+- `_events(...)` makes the `start` event and, if `lead > 0`, a `heads_up` event `lead` minutes earlier.
+- `pomodoro_events(task, day, lead)` loops `k = 0, 1, 2...`: break starts at `start + 50 + k*60` minutes while that is before the task's end.
+- `events_for_day(day, cfg)` returns `[]` if alarms are disabled; otherwise adds prayer events (every day), break events from `is_break` rows, pomodoro events for Focus tasks, and optional task-start events, then sorts by time.
+- `due_events(now, cfg, grace_seconds=90)` returns events whose time is within the last 90 seconds.
+
+!why: The 90-second grace means an alarm still rings if the computer woke up or the app started a few seconds late, but not an alarm from an hour ago.
+
+!without: A grace of zero misses any event that falls between two engine ticks; an unlimited grace rings every past alarm of the day the moment you launch the app.
+
+`as_dict()` converts the dataclass to JSON-friendly values (the datetime becomes an ISO string) for the API.
+
+### 19.4 scheduler/automation.py
+
+Everything the app does for you. Each function is **idempotent**.
+
+| Function | Does | Safe-repeat trick |
+| find_free_slot(day, minutes, earliest, latest) | slides a window in 5-minute steps until it avoids every task and prayer | read-only |
+| parse_quick_add(text) | regex parse of "Study maths 4pm 1h #focus" | pure function |
+| quick_add(text, day, default_type) | parse, pick slot, validate through PersonalTaskForm, save, add break | returns (task, error); never raises for user mistakes |
+| generate_recurring(day) | create today's tasks from active templates | skips if `recurring_source` row for that day exists |
+| carry_over_incomplete(from_day, to_day) | re-plan unfinished tasks into free slots | skips a title already on the target day |
+| mark_missed_prayers(now) | flips ended, unprayed prayers to "missed" | only touches `NOT_YET` rows |
+| run_daily_automation(now) | calls the above; the engine runs it every minute | all parts idempotent |
+
+Regex notes. `_TIME_RE` accepts `4pm`, `4:30pm`, `at 4pm` or 24-hour `16:30`, but **not** a bare number, so "Read chapter 3" keeps its 3 in the title. `_DUR_RE` accepts `1h`, `1.5 hours`, `45 min`. The time is removed from the text first so "4pm" cannot be mistaken for "4 m" (minutes). `12pm` becomes noon and `12am` midnight via `hour % 12 + (12 if pm else 0)`.
+
+!why: `quick_add` returns `(task, error)` instead of raising, because a typo by the user is an expected event, not a program failure. The API turns the error into a 400 response with a message.
+
+### 19.5 Alternative: collapsing the rules into model methods or signals
+
+You could attach rules to the model (`PersonalTask.clean()` calling `prayer_conflict`) so the admin also enforces them, or use Django **signals** (`post_save`) to insert breaks automatically. Both hide behaviour; this project keeps the calls explicit in views and helpers so a student can follow them.

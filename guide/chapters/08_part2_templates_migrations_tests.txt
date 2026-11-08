@@ -1,0 +1,149 @@
+## 22. Templates and static files
+
+All templates live in `scheduler/templates/admin/scheduler/` (plus three duplicates in `scheduler/templates/scheduler/`). The folder name `admin/scheduler/` is a leftover of the upstream library, which overrides admin templates; the planner's pages sit in the same folder.
+
+**The base layout idea.** `base.html` (890 lines) is a **standalone** page frame, not the Django admin: its own `<style>` block (glass cards, buttons, tables, dark theme), the navbar, the keyboard-shortcuts modal and the script that loads `app/alarm.js`. Almost every planner page begins `{% extends "admin/scheduler/base.html" %}`. The blocks it defines: `title`, `content`, `extra_css`, and one `nav_*` block per navbar link (the page fills its own block with `active` to highlight the link).
+
+!why: The `nav_home`, `nav_focus` ... blocks exist so the navbar is written once, in the base, yet each page can mark its own link as active. A page just writes `{% block nav_focus %}active{% endblock %}`.
+
+!without: Without inheritance you would paste the 900-line frame into every page, and a navbar change would be 25 edits.
+
+### 22.1 Planner pages
+
+| Template | Extends | View | What it shows |
+| base.html | (none) | all | frame, navbar, shortcuts modal, loads alarm.js |
+| home.html | base | home | Three.js hero + two tilting cards (Multi / Focus) |
+| focus_day.html | base | focus_day | task cards, live 50/10 timer, prayer chips, free slots |
+| calendar_view.html | base | calendar_view | month grid; day cells lift in 3D on hover |
+| task_data_view.html | base | task_data_view | day timeline, prayers, tick boxes, day-type toggle, quick add (1,732 lines: mostly inline CSS and JavaScript) |
+| create_personal_task.html | base | create/edit task | the form, category and type help text, subtasks editor |
+| recurring.html | base | recurring_list | create form + table of recurring tasks |
+| alarm_settings.html | base | alarm_settings | alarm preferences form |
+| prayer_settings.html, create_prayer.html, update_prayer.html | base | prayer views | list, add, edit prayer windows |
+| projects_list.html, create_project.html, project_detail.html | base | project views | projects, tasks, schedules, Gantt chart |
+| analytics_dashboard.html | base | analytics_dashboard | Chart.js charts (loaded from a CDN) and stat cards |
+
+### 22.2 How the pages hand data to JavaScript
+
+- `focus_day.html`: `data-start="{{ t.start_time|time:'H:i' }}"` on each card, and an inline JavaScript array built with a `{% for %}` loop for the prayers. The script reads these, never touches Python.
+- `task_data_view.html`: `{% csrf_token %}` is placed inside the day-type panel purely so the script can read `[name=csrfmiddlewaretoken]` for its `fetch()` calls.
+- `create_personal_task.html`: a hidden `subtasks_json` field is filled by JavaScript before the form submits.
+
+!without: If the page had no `{% csrf_token %}` anywhere, there would be no token to read, and POSTs from `fetch()` would be rejected with 403.
+
+### 22.3 The 3D elements (and why they are safe)
+
+- **Tilt cards** (`home.html`, `focus_day.html`): `perspective` on the parent plus `transform-style: preserve-3d` on the card; JavaScript sets `rotateX/rotateY` from the mouse position inside the card and resets on `mouseleave`. Children use `translateZ(40px)` so text floats above the card.
+- **Calendar**: `a[href^="/calendar/"]:hover > div { transform: perspective(600px) translateZ(18px) rotateX(8deg); }`. The selector targets the day cell inside each link because those cells are styled inline.
+- **Gantt**: `.gantt3d { transform: rotateX(10deg) }` flattens on hover.
+- **Three.js hero** (`static/app/hero3d.js`): a torus ring, an icosahedron core, a wireframe shell, and five orbiting dots (one per prayer). The renderer is sized from the canvas, drawing pauses when the tab is hidden (`visibilitychange`), and one static frame is drawn if the user prefers reduced motion.
+
+!why: Every effect is wrapped in `@media (prefers-reduced-motion: reduce)` or checks `matchMedia(...)`. Some people feel ill from motion; respecting the operating-system setting is both kind and a basic accessibility requirement.
+
+!alt: A pure-CSS version of the hero (animated gradient and a rotating `div` cube) needs no library; Three.js was chosen because you asked for real 3D and the library is vendored locally so the app works offline.
+
+### 22.4 Upstream templates (job queue screens)
+
+Two generations exist side by side. The **old** ones extend `scheduler_base.html`, which extends Django's `admin/base_site.html` (admin look): `stats.html`, `jobs.html`, `job_detail.html`, `queue_workers.html`, `workers_list.html`, `worker_details.html`, `confirm_action.html`, `single_job_action.html`. The **"_new"** versions extend the standalone `base.html` (planner look): `stats_new.html`, `jobs_new.html`, `job_detail_new.html`, `queue_workers_new.html`, `workers_list_new.html`, `worker_details_new.html`, `confirm_action_new.html`, `single_job_action_new.html`. Partials (`jobs-list.partial.html`, `jobs-list-with-tasks.partial.html`, `workers-list.partial.html`) are fragments pulled in with `{% include %}`. `change_form.html` (6 lines) extends Django's `admin/change_form.html` and fills the `after_related_objects` block with `{% include 'admin/scheduler/jobs-list.partial.html' %}`, so a task's page ends with the list of its job executions. `change_list.html` extends `admin/change_list.html`, loads `scheduler_tags`, and overrides `object-tools` with just `{{ block.super }}` (an override that currently changes nothing, a hook left for later).
+
+!tip: Two copies of a template is a maintenance trap: a fix in one is easily missed in the other. Once you are sure the "_new" set is the one in use, delete the old set (check each view's `render(...)` call first).
+
+### 22.5 scheduler/templates/scheduler/ (three files)
+
+`create_prayer.html`, `prayer_settings.html`, `update_prayer.html` here have the same line counts (116, 116, 129) as the copies in `admin/scheduler/` and extend the same base. The views render the `admin/scheduler/...` names, so these three appear to be unused duplicates and can be removed after confirming.
+
+### 22.6 Static files
+
+| File | Role |
+| scheduler/static/admin/js/select-fields.js | upstream: on the Task admin form it shows only the fields for the chosen task type (Cron, Repeatable or Once) and hides the others, using django.jQuery and the `.tasktype-...` CSS classes |
+| scheduler/static/app/alarm.js | browser fallback alarm: fetches today's events, sets timers, plays a Web Audio tone, shows an overlay with Snooze/Dismiss, asks for notification permission. It exits at once when the user agent contains DailyScheduleDesktop so the exe never double-rings |
+| scheduler/static/app/hero3d.js | the Three.js home scene |
+| scheduler/static/app/vendor/three.min.js | Three.js r128 (600 KB), served locally |
+
+!why: Browsers refuse to play audio until the user clicks something. The alarm page shows an "Enable alarms" button; its click creates the `AudioContext` and (once) asks for notification permission.
+
+## 23. Migrations, file by file
+
+A migration file has `dependencies` (the previous migration) and `operations` (what to do). Reading the list below top to bottom is the history of the database.
+
+### 23.1 Upstream (0001 to 0021)
+
+| File | Operations | Story (verified from the file) |
+| 0001_initial_squashed_0005_added_result_ttl | 3 CreateModel | squashed history; creates CronJob, RepeatableJob and ScheduledJob, the three original job types |
+| 0002 | 3 AlterField | the id column of each job model becomes BigAutoField |
+| 0003 | 2 CreateModel, 5 AlterField | adds the JobArg and JobKwarg argument models; adjusts cron_string and interval_unit (adds "weeks"); ids go back to AutoField |
+| 0004 | 3 AddField | adds at_front (put the job at the front of the queue) |
+| 0005 | 3 AlterField | at_front becomes optional (blank, null) |
+| 0006 | RunPython | data migration: forward step does nothing; reverse step deletes a job named "Job scheduling jobs" |
+| 0007 | AddField, 3 AlterField | adds result_ttl; queue field gets help text and a length |
+| 0008 | 6 RemoveField, 2 RenameField | argument models collapse bool/int/datetime value columns into one val column (str_val renamed to val) |
+| 0009 | 4 AlterField | argument type choices and val length |
+| 0010 | CreateModel | Queue: an unmanaged model (`managed: False`, no table) that only exists so the admin can show a Queues page |
+| 0011 | CreateModel, AlterModelOptions, 18 AlterField | Worker: another unmanaged admin-only model; many field options updated |
+| 0012, 0013, 0014 | AlterField | help text and wording for name, queue, created, modified |
+| 0015 | 3 RenameModel | CronJob, RepeatableJob, ScheduledJob become CronTask, RepeatableTask, ScheduledTask |
+| 0016 | 2 RenameModel, 3 AlterModelOptions | JobArg and JobKwarg become TaskArg and TaskKwarg |
+| 0017 | 8 AddField, RemoveField | removes `repeat`; adds failed_runs, last_failed_run, last_successful_run and related bookkeeping |
+| 0018 | 3 AlterField (commented out) | queue-choice experiment; the operations are commented out in the file |
+| 0019 | CreateModel, 3 AddField | creates the unified Task model and temporary new_task_id links from the three old models |
+| 0020 | RemoveField, model removal | drops the temporary links and the old CronTask / RepeatableTask / ScheduledTask models |
+| 0021 | AddField, RemoveField | job_id replaced by job_name ("current job name on queue") |
+
+!why: "Unmanaged" models (`managed = False`) have no database table. Django still lets you register them in the admin, which is how the library gets a Queues and a Workers screen backed by Redis instead of a table.
+
+**Data migrations (RunPython).** 0006 shows the third kind of migration: schema changes alter structure; `RunPython(forwards_func, reverse_func)` runs your own Python to move data. Always give a reverse function so the migration can be undone. Note it uses `apps.get_model(...)` (the historical model), never an import of the real model, because the model may have changed since.
+
+### 23.2 The planner's migrations (0022 to 0029)
+
+| File | Operations | What it created |
+| 0022_prayerschedule_personaltask_taskcompletion | 3 CreateModel | PrayerSchedule, PersonalTask, TaskCompletion |
+| 0023 | 2 CreateModel, AddField | PrayerCompletion, SubTask, performance_rating |
+| 0024 | AddField | PrayerCompletion.status |
+| 0025 | 2 AddField | PersonalTask.is_break and parent_task |
+| 0026 | 3 CreateModel, AddIndex | Project, ProjectTask, ProjectSchedule |
+| 0027_alarmsetting | CreateModel | AlarmSetting (this work) |
+| 0028_task_mode_dayplan | CreateModel, AddField, AddIndex | DayPlan, PersonalTask.task_type, date+task_type index (this work) |
+| 0029_recurring_task | CreateModel, AddField | RecurringTask, PersonalTask.recurring_source (this work) |
+
+!why: `AddField` for `task_type` has `default="multi"`. Existing rows need *some* value when a non-null column is added; the default makes every old task a Multi task, which is exactly the migration rule agreed ("existing data stays Multi").
+
+!without: Adding a non-null field without a default makes `makemigrations` ask you for one interactively, and `migrate` fail on a table that already has rows.
+
+!tip: Migration numbers are just ordering; two developers creating `0027` at once produce a conflict that `makemigrations --merge` fixes. This is why migrations are committed to git.
+
+## 24. Tests, file by file
+
+Tests live in `scheduler/tests/`. New tests for this work are marked (new).
+
+### 24.1 This work's tests
+
+| File | Tests | What it proves |
+| test_alarms.py (new) | 7 | break and prayer events and heads-ups; toggles; completed breaks don't ring; due-window grace; API and settings clamping |
+| test_modes.py (new) | 11 | third focus task rejected, editing allowed, breaks not counted; prayer overlap rejected in both modes, touching allowed; pomodoro break alarms every 60 min; day-type API; pages render; project generation skips prayer windows |
+| test_automation.py (new) | 19 | quick-add parsing, free slots avoid prayers, recurring is idempotent, prayer-clash skipped, carry-over, missed prayers, recurring and alarm pages |
+
+Pattern in every test: **arrange** (create rows), **act** (call the function or the client), **assert**. Helper functions at the top (`make`, `form_data`) keep each test to a few lines.
+
+```python
+def test_touching_a_prayer_is_fine(self):
+    self.assertTrue(PersonalTaskForm(form_data(start_time="12:00", end_time="13:00")).is_valid())
+```
+
+A good test pins a **boundary**: here, a task ending exactly when the prayer starts must be allowed. If someone later changes `<` to `<=` in `overlaps`, this test fails immediately.
+
+### 24.2 Upstream tests
+
+| File | Tests | Covers |
+| conf.py, jobs.py, testtools.py | helpers | `SchedulerBaseCase` creates queues with FakeRedis; `task_factory` helpers |
+| test_admin.py, test_admin_permissions.py, test_task_admin_display.py | 3 / 2 / 1 | task admin widgets, read-only permissions, next-run display |
+| test_internals.py | 8 | internal helpers and settings loading |
+| test_job_arg_models.py | 28 | TaskArg / TaskKwarg value types |
+| test_job_decorator.py | 16 | the @job decorator and .delay() |
+| test_queue_getters.py | 8 | getting queue connections, fail-fast behaviour |
+| test_redis_models.py | 9 | Redis-backed models, results, admin |
+| test_settings.py | 3 | SCHEDULER_CONFIG validation |
+| test_mgmt_commands/, test_multiprocess/, test_task_types/, test_views/, test_worker/ | folders | export/import commands, multi-process workers, once/cron/repeatable tasks, queue and job views, worker behaviour |
+
+!tip: On Windows the upstream suite fails to load with `ValueError: cannot find context for 'fork'`: some modules ask for the Unix-only multiprocessing start method. This happens with or without this project's changes. The new test modules run fine on Windows.
+
+Run only the new ones with: `cd testproject && set FAKEREDIS=True && uv run python manage.py test scheduler.tests.test_alarms scheduler.tests.test_modes scheduler.tests.test_automation`.

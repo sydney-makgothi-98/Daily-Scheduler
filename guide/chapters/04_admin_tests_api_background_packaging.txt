@@ -1,0 +1,201 @@
+## 9. Admin, authentication, sessions, CSRF and messages
+
+### 9.1 The admin site
+
+Register a model and Django gives you a full create/read/update/delete website for it.
+
+```python
+from django.contrib import admin
+@admin.register(PersonalTask)
+class PersonalTaskAdmin(admin.ModelAdmin):
+    list_display = ("title", "date", "start_time", "category")
+    list_filter = ("date", "category")
+    search_fields = ("title",)
+```
+
+Visit `/admin/` after `createsuperuser`. This is the fastest way to inspect your data while building.
+
+!alt: You might not need your own CRUD pages at all for an internal tool. This planner has custom pages because the admin cannot show a timeline, a 50/10 timer or a calendar grid.
+
+### 9.2 Authentication and sessions
+
+`django.contrib.auth` provides `User`, passwords (hashed, never stored plainly), groups and permissions. After login a **session** (a row in the database plus a cookie holding a random id) remembers who you are. `request.user` is then available in every view, and `@login_required` protects a page.
+
+This planner is a **single-user local app**, so its pages are open. If you ever host it online you must add `@login_required` (or `LoginRequiredMixin` for class views) to every view, because otherwise anyone who can reach the address can read and change your tasks.
+
+### 9.3 CSRF protection
+
+**Cross-Site Request Forgery**: a malicious page tricks your browser into sending a POST to your site, using your logged-in cookies. Django's defence: every POST must carry a secret token that a foreign page cannot know.
+
+```html
+<form method="post">{% csrf_token %} ... </form>
+```
+
+For JavaScript requests, read the token and send it in a header:
+
+```javascript
+const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+fetch(url, {method: 'POST', headers: {'X-CSRFToken': csrf}, body: JSON.stringify(data)});
+```
+
+!without: Marking views `@csrf_exempt` (the original code did, for the AJAX endpoints) turns the protection off. For a purely local app the risk is small, but it is a bad habit to teach, which is why the new endpoints send the token instead.
+
+### 9.4 The messages framework
+
+`messages.success(request, "Task created")` stores a one-time note in the session; the next template can print it. It exists because after a redirect you cannot pass text in a variable: the page the user lands on is a *new* request.
+
+## 10. Testing
+
+### 10.1 Why test
+
+Tests are small programs that run your code and check the answer. They let you change the code later with confidence, and they document the rules ("a third focus task is rejected").
+
+### 10.2 Django's test tools
+
+```python
+from django.test import TestCase
+
+class FocusLimitTest(TestCase):
+    def test_third_focus_task_rejected(self):
+        make("a", ...); make("b", ...)                      # arrange
+        form = PersonalTaskForm(form_data(task_type="focus"))
+        self.assertFalse(form.is_valid())                   # act + assert
+```
+
+- `TestCase` wraps each test in a transaction and rolls back, so tests never pollute each other or your real database.
+- Django creates a **separate empty test database** each run.
+- `self.client.get(reverse("home"))` calls your view without a browser; check `res.status_code` and `res.context`.
+- Test names must start with `test_`; files with `test_`.
+
+Run: `python manage.py test scheduler.tests.test_modes` (a module) or add `.ClassName.test_name` for one test.
+
+### 10.3 What to test first
+
+1. Pure functions (parse_quick_add, find_free_slot, events_for_day): no database tricks needed.
+2. Rules that protect data (focus limit, prayer overlap).
+3. That each page returns 200.
+4. Idempotent automation (run twice, same result).
+
+!why: The alarm logic was split into `scheduler/alarms.py` (pure calculation) and `desktop/engine.py` (sound and windows) so the calculation can be tested with fake times, while the part that needs speakers cannot be unit tested.
+
+## 11. JSON endpoints and talking to Django from JavaScript
+
+### 11.1 The pattern
+
+```python
+@require_POST
+def toggle_task_completion(request, task_id):
+    task = get_object_or_404(PersonalTask, id=task_id)
+    data = json.loads(request.body)
+    task.is_completed = data.get("is_completed", False)
+    task.save()
+    return JsonResponse({"success": True, "is_completed": task.is_completed})
+```
+
+```javascript
+fetch(`/api/tasks/${id}/toggle/`, {
+  method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+  body: JSON.stringify({is_completed: true})
+}).then(r => r.json()).then(d => console.log(d.success));
+```
+
+Why JSON: it is a text format both Python (`json`) and JavaScript (`JSON.parse`) understand natively.
+
+!why: Return **400** for bad input and **200** with `"success": true` for good, so JavaScript can tell what happened from the status code and the body. `quick_add_api` does this and shows the error text on the page.
+
+!alt: For a large API, use **Django REST Framework** (serializers, viewsets, auth, browsable API). For three endpoints, `JsonResponse` is simpler and has no extra dependency.
+
+## 12. Doing work in the background: threads, queues, Redis
+
+### 12.1 The problem
+
+A web request must finish quickly. Things that happen *later* or *repeatedly* (ring an alarm at 14:50, generate tomorrow's recurring tasks) need something that keeps running when no page is open.
+
+### 12.2 Three ways to solve it
+
+| Approach | How it works | Used here |
+| Thread inside the app | A background thread checks the clock every few seconds | desktop/engine.py (the alarms) |
+| Job queue + workers | Jobs are put on a queue in Redis; separate worker processes run them | the upstream django-tasks-scheduler library |
+| Operating-system scheduler | cron / Windows Task Scheduler starts a script at set times | not used (the exe starts itself at login instead) |
+
+### 12.3 Threads in two minutes
+
+A **thread** is a second line of execution inside one program. The alarm engine is a thread that loops: wait 5 seconds, ask "is anything due?", ring if so. Because it is a *daemon* thread it dies when the program quits.
+
+```python
+class AlarmEngine(threading.Thread):
+    def __init__(self):
+        super().__init__(daemon=True)
+        self._stop_evt = threading.Event()
+    def run(self):
+        while not self._stop_evt.wait(5):     # sleeps 5 s, wakes early if stopped
+            self.tick(datetime.now())
+```
+
+!without: A plain `while True: time.sleep(5)` can only be stopped by killing the program. `Event.wait(timeout)` is both the sleep and the "please stop" signal.
+
+### 12.4 Idempotent jobs
+
+A job is **idempotent** if running it twice gives the same result as once. `generate_recurring` checks "does today's copy already exist?" before creating it, so the engine can safely call it every minute and a crash/restart cannot create duplicates. Design every repeated job this way.
+
+### 12.5 Redis and queues (the upstream library)
+
+Redis is a very fast in-memory store. The upstream scheduler keeps its queues, job states and worker heartbeats there. Your planner does not use it; the desktop build replaces it with an in-memory fake (`FakeRedis`) so no server needs installing.
+
+## 13. Packaging and running for real
+
+### 13.1 Development server vs production server
+
+`manage.py runserver` is for development only. For real use serve Django's WSGI `application` with a production server. The desktop app uses **waitress**, a pure-Python server that works on Windows.
+
+### 13.2 Settings per environment
+
+Keep one settings file per situation. `testproject/settings.py` is for development and tests; `desktop/settings.py` is for the packaged program. They differ in: database location (`%APPDATA%`), `DEBUG`, secret key, cache backend, and the broker.
+
+### 13.3 SQLite
+
+A whole database in one file, no server. It is excellent for a single-user desktop app and for tests. For many simultaneous users switch to PostgreSQL by changing only `DATABASES`; model and view code stays identical (that is the point of the ORM).
+
+### 13.4 PyInstaller
+
+Bundles Python, your code and every library into a folder with `DailySchedule.exe`. Things to know:
+
+- It cannot always see dynamically-imported modules; the build script lists `--hidden-import` and `--collect-all scheduler` so templates, static files and migrations are included.
+- Static files are gathered first with `collectstatic` and bundled.
+- Writable data must NOT live next to the exe (it may be read-only); it goes to `%APPDATA%\DailySchedule`.
+- `--windowed` hides the console. That also means `print()` shows nowhere, which is why `--selftest` returns an exit code instead of only printing.
+
+[[diagram:desktop_arch]]
+
+### 13.5 Windows integration used by the app
+
+| Feature | Library | Purpose |
+| Native window | pywebview (Edge WebView2) | shows the site like a desktop program |
+| Tray icon | pystray + Pillow | keeps the program running, offers Mute/Quit |
+| Sound | winsound (standard library) | looping alarm tone, volume scaled in the WAV data |
+| Toast notification | winotify | Windows notification centre message |
+| Alarm window | tkinter (standard library) | always-on-top Snooze/Dismiss window |
+| Start with Windows | winreg (standard library) | writes the HKCU\...\Run key |
+| Single instance | ctypes + a named mutex | stops two copies ringing the same alarm |
+
+## 14. Spotting the patterns (the "Django is simple" cheat sheet)
+
+Every file in Part II falls into one of these shapes. If you can name the shape, you can read the file.
+
+| Shape | Looks like | Example in this project |
+| List view | filter(...) then render(...) | calendar_view, focus_day |
+| Detail view | get_object_or_404 then render | edit_personal_task (GET) |
+| Create/edit view | form pattern (7.2) | create_personal_task |
+| Action view | POST, change a row, redirect or JSON | delete_personal_task, toggle_* |
+| JSON endpoint | json.loads(request.body), JsonResponse | quick_add_api, set_day_type |
+| Model with rules | fields + Meta + methods | PersonalTask, RecurringTask |
+| Pure helper module | functions with no request in sight | planning.py, alarms.py, automation.py |
+| Template page | extends base, fills block content | home.html, focus_day.html |
+| Migration | Create/Add/Alter operations | 0027 to 0029 |
+| Test | arrange, act, assert | test_modes.py |
+
+Three habits that hold the whole project together:
+
+1. **Thin views, fat helpers.** Views parse the request and choose a response. Rules live in `planning.py`, `automation.py`, `alarms.py` and on the models, where tests can reach them.
+2. **One source of truth.** Prayer overlap is checked in one function (`prayer_conflict`) and reused by the form, the break inserter, copy-yesterday, recurring and quick-add.
+3. **Make it safe to repeat.** Redirect after POST, idempotent jobs, unique alarm keys.

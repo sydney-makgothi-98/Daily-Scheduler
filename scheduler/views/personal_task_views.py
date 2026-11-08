@@ -8,49 +8,19 @@ from django.utils import timezone
 from django.db import models
 import json
 
-from scheduler.models import PersonalTask, PrayerSchedule, TaskCategory, TaskCompletion, SubTask, PrayerCompletion, PrayerName
+from scheduler.models import (
+    DayPlan,
+    PersonalTask,
+    PrayerSchedule,
+    TaskCategory,
+    TaskCompletion,
+    SubTask,
+    PrayerCompletion,
+    PrayerName,
+    TaskMode,
+)
 from scheduler.forms import PersonalTaskForm
-
-
-def auto_insert_breaks(task):
-    """Automatically insert a 10-minute break after tasks >= 1 hour"""
-    if task.is_break:
-        return
-
-    start = datetime.combine(task.date, task.start_time)
-    end = datetime.combine(task.date, task.end_time)
-    duration = (end - start).total_seconds() / 60
-
-    if duration >= 60:
-        break_start = task.end_time
-        break_end_time = (datetime.combine(task.date, task.end_time) + timedelta(minutes=10)).time()
-
-        existing_break = PersonalTask.objects.filter(
-            date=task.date,
-            start_time=break_start,
-            is_break=True,
-            parent_task=task
-        ).exists()
-
-        if not existing_break:
-            conflicting_tasks = PersonalTask.objects.filter(
-                date=task.date,
-                start_time__lt=break_end_time,
-                end_time__gt=break_start
-            ).exclude(id=task.id).exists()
-
-            if not conflicting_tasks:
-                PersonalTask.objects.create(
-                    title="🔔 Break",
-                    description="Auto-inserted break to prevent burnout",
-                    date=task.date,
-                    start_time=break_start,
-                    end_time=break_end_time,
-                    category=TaskCategory.FUN,
-                    is_break=True,
-                    parent_task=task,
-                    is_completed=False
-                )
+from scheduler.planning import auto_insert_breaks, focus_slots_left, prayer_conflict
 
 
 def calendar_view(request):
@@ -162,6 +132,8 @@ def task_data_view(request, year, month, day):
             "end_time": task.end_time,
             "category": task.category,
             "category_display": task.get_category_display(),
+            "task_type": task.task_type,
+            "task_type_display": task.get_task_type_display(),
             "is_completed": task.is_completed,
             "icon": get_category_icon(task.category),
         })
@@ -185,6 +157,7 @@ def task_data_view(request, year, month, day):
         "timeline_items": timeline_items,
         "late_tasks": late_tasks,
         "task_stats": task_stats,
+        "day_type": DayPlan.type_for(date),
         "today": timezone.now().date(),
     }
 
@@ -253,7 +226,7 @@ def create_personal_task(request, year, month, day):
             messages.success(request, f"Task '{task.title}' created successfully!")
             return redirect("task_data_view", year=date.year, month=date.month, day=date.day)
     else:
-        initial_data = {"date": date}
+        initial_data = {"date": date, "task_type": DayPlan.type_for(date)}
         form = PersonalTaskForm(initial=initial_data)
 
     context = {
@@ -549,6 +522,15 @@ def copy_tasks_from_yesterday(request, year, month, day):
                 if "end_time" in override:
                     end_time = datetime.strptime(override["end_time"], "%H:%M").time()
 
+            # The copy bypasses the form, so apply the same fixed rules here.
+            prayer = prayer_conflict(start_time, end_time)
+            if prayer:
+                errors.append(f"'{original_task.title}' overlaps {prayer.get_prayer_name_display()}; adjust its time")
+                continue
+            if original_task.task_type == TaskMode.FOCUS and focus_slots_left(current_date) == 0:
+                errors.append(f"'{original_task.title}' skipped: focus days allow at most 2 focus tasks")
+                continue
+
             # Create the copied task
             new_task = PersonalTask.objects.create(
                 title=original_task.title,
@@ -557,6 +539,7 @@ def copy_tasks_from_yesterday(request, year, month, day):
                 start_time=start_time,
                 end_time=end_time,
                 category=original_task.category,
+                task_type=original_task.task_type,
                 is_completed=False
             )
 

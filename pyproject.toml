@@ -46,6 +46,14 @@ dependencies = [
   "typing-extensions>=4.15",
 ]
 optional-dependencies.sentry = [ "sentry-sdk~=2.19" ]
+optional-dependencies.desktop = [
+  "fakeredis>=2.28",
+  "pillow>=10",
+  "pystray>=0.19",
+  "pywebview>=5",
+  "waitress>=3",
+  "winotify>=1.1; sys_platform=='win32'",
+]
 optional-dependencies.valkey = [ "valkey>=6.0.2" ]
 optional-dependencies.yaml = [ "pyyaml>=6", "types-pyyaml>=6.0.12.20250516" ]
 urls."Bug Tracker" = "https://github.com/django-commons/django-tasks-scheduler/issues"
@@ -60,6 +68,7 @@ dev = [
   "fakeredis>=2.28",
   "mypy>=1.20",
   "pre-commit>=4.2",
+  "pyinstaller>=6",
   "pyyaml>=6",
   "ruff>=0.16",
   "time-machine>=2.19",

@@ -2,13 +2,14 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from scheduler.models import PersonalTask, TaskCategory, SubTask, PrayerCompletion
+from scheduler.models import FOCUS_MAX_PER_DAY, PersonalTask, TaskCategory, TaskMode, SubTask, PrayerCompletion
+from scheduler.planning import focus_task_count, prayer_conflict
 
 
 class PersonalTaskForm(forms.ModelForm):
     class Meta:
         model = PersonalTask
-        fields = ["title", "description", "date", "start_time", "end_time", "category"]
+        fields = ["title", "description", "date", "start_time", "end_time", "category", "task_type"]
         widgets = {
             "title": forms.TextInput(attrs={
                 "class": "form-input",
@@ -39,6 +40,10 @@ class PersonalTaskForm(forms.ModelForm):
                 "class": "form-select",
                 "required": True,
             }),
+            "task_type": forms.Select(attrs={
+                "class": "form-select",
+                "required": True,
+            }),
         }
 
     def clean(self):
@@ -53,6 +58,23 @@ class PersonalTaskForm(forms.ModelForm):
             if start_time >= end_time:
                 raise ValidationError(
                     "End time must be after start time."
+                )
+
+        # Prayer times are non-negotiable in every mode: nothing may overlap a prayer window.
+        if start_time and end_time and start_time < end_time:
+            prayer = prayer_conflict(start_time, end_time)
+            if prayer:
+                raise ValidationError(
+                    f"This overlaps {prayer.get_prayer_name_display()} "
+                    f"({prayer.start_time:%H:%M}-{prayer.end_time:%H:%M}). Prayer time can't be scheduled over."
+                )
+
+        # Focus mode: at most FOCUS_MAX_PER_DAY focus tasks per day.
+        if cleaned_data.get("task_type") == TaskMode.FOCUS and date:
+            if focus_task_count(date, exclude_pk=self.instance.pk) >= FOCUS_MAX_PER_DAY:
+                raise ValidationError(
+                    f"Focus days allow at most {FOCUS_MAX_PER_DAY} focus tasks. "
+                    "Change one of the existing ones to Multi-Task, or pick another day."
                 )
 
         # Store late task warning in cleaned data (don't block submission)

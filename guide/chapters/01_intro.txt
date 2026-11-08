@@ -1,0 +1,152 @@
+# Part I: Theory
+
+## 1. How to use this guide
+
+This guide teaches Django using one real application: the **Daily Schedule** planner you are building. Real code teaches better than toy examples, because real code has to deal with awkward things: prayer times that nothing may overlap, a limit of two focus tasks a day, alarms that must ring with the window closed.
+
+The guide has two halves.
+
+- **Part I: Theory.** What Django is, how the web works, and every Django idea you need (URLs, views, models, forms, templates, the admin, testing, packaging), each with a small worked example and a diagram. You can read Part I without opening the project.
+- **Part II: The project, file by file.** Every file in the repository, in a sensible order, with the reason for each important line and a pointer back to the theory chapter that explains the idea.
+
+### Conventions used in the boxes
+
+Four kinds of boxes appear throughout. They are the heart of the guide, because they answer the questions students actually ask.
+
+!why: A green box explains **why** a line is written the way it is. Whenever the code looks like it has an unnecessary step, this box tells you what the step buys.
+
+!without: A red box shows **what would go wrong** if you left that line out or did it differently. Seeing the failure is the fastest way to remember the rule.
+
+!alt: A blue box shows an **alternative or simpler way**, such as the class-based version of a function view, or a one-line shortcut Django already provides.
+
+!tip: A grey box is a small practical tip: a command, a habit, a trap to avoid.
+
+### How to teach with it
+
+If you are teaching someone else, a good order is: chapter 3 (the web), chapter 4 (Django's shape), then build the smallest possible page (chapter 5), add data (chapter 6), take input (chapter 7), make it pretty (chapter 8). Then open Part II and show how the same five ideas repeat in every file. Almost everything in this project is a variation on those five ideas. Once students see the repetition, Django stops feeling large.
+
+### The five ideas that repeat everywhere
+
+| Idea | Where you meet it | One-line summary |
+| URL routing | urls.py | A table that maps a web address to a function. |
+| View | views/*.py | A function that takes a request and returns a response. |
+| Model | models/*.py | A Python class that is also a database table. |
+| Form | forms.py | A class that checks what the user typed. |
+| Template | templates/*.html | An HTML file with holes that the view fills in. |
+
+Everything else (the admin, migrations, tests, the alarm engine, the .exe) supports these five.
+
+## 2. Languages used, and what to learn in each
+
+A Django project is never only Python. Even this small planner uses nine languages or file formats. This chapter lists each one, where it appears in the project, and a checklist of what you must be comfortable with to be productive. Use the checklists as a syllabus.
+
+[[diagram:languages]]
+
+### 2.1 Python (the heart of Django)
+
+Everything on the server is Python: models, views, forms, the alarm engine, the build script. Django is a Python library, so Python skill is the ceiling on Django skill.
+
+**Must know before starting Django**
+
+- Variables, numbers, strings, f-strings (`f"Task {title}"`), booleans, `None`.
+- Lists, tuples, dictionaries and sets; looping with `for`; list and dict comprehensions.
+- Functions: arguments, default values, keyword arguments, `*args` and `**kwargs`, return values.
+- Classes: `__init__`, attributes, methods, `self`, **inheritance** (a Django model is a class that inherits from `models.Model`), `@classmethod`, `@property`.
+- Modules and imports: `from scheduler.models import PersonalTask`.
+- Exceptions: `try / except`, `raise`.
+- Decorators: `@require_http_methods(["POST"])` is a decorator; learn what `@something` above a function means.
+- The `datetime` module: `date`, `time`, `datetime`, `timedelta`. This project uses it constantly.
+- Virtual environments and `pip` / `uv`.
+
+**Learn while using Django**
+
+- Type hints (`def f(x: int) -> str`), dataclasses (used in `alarms.py`), `threading` (used by the alarm engine), regular expressions (the quick-add parser), context managers (`with`).
+
+**Worked mini-example: the same idea in plain Python and in Django**
+
+```python
+# Plain Python: a class holding data
+class Task:
+    def __init__(self, title, minutes):
+        self.title = title
+        self.minutes = minutes
+
+# Django: the SAME class, but it is also a database table
+from django.db import models
+
+class Task(models.Model):
+    title = models.CharField(max_length=255)
+    minutes = models.IntegerField()
+```
+
+!why: Django models look like normal classes on purpose. You write Python; Django turns it into a table with columns `title` and `minutes`, plus an automatic `id`.
+
+### 2.2 HTML
+
+HTML is the structure of every page: headings, paragraphs, forms, buttons, tables. Every `.html` file in `scheduler/templates/` is HTML with extra Django syntax mixed in.
+
+**Must know:** tags and attributes (`<a href="...">`), headings, lists, tables, `<form method="post">` with `<input>`, `<select>`, `<button>`, `<label>`; the difference between block elements (`div`) and inline elements (`span`); the `<head>` and `<body>` split; accessibility basics (labels, `aria-*`, alt text).
+
+### 2.3 The Django template language (DTL)
+
+A tiny language, not Python, that lives inside HTML files.
+
+```html
+{% extends "admin/scheduler/base.html" %}     <!-- reuse a page frame -->
+{% block content %}
+  <h2>{{ date_display }}</h2>                  <!-- print a variable -->
+  {% for t in tasks %}                         <!-- loop -->
+    <li>{{ t.title }}</li>
+  {% empty %}
+    <li>Nothing yet</li>
+  {% endfor %}
+{% endblock %}
+```
+
+**Must know:** `{{ variable }}`, `{% tag %}`, filters (`{{ x|date:"H:i" }}`), `{% if %}`, `{% for %}`, `{% url 'name' %}`, `{% csrf_token %}`, `{% extends %}` / `{% block %}`, `{% load static %}`, and why templates deliberately cannot run arbitrary Python (keeps design and logic apart).
+
+### 2.4 CSS
+
+CSS controls colours, spacing, layout and animation. This project uses it for the glass-card look, the dark theme and the 3D tilt effect (`transform: perspective(...) rotateX(...)`).
+
+**Must know:** selectors (class, id, element, `a:hover > div`), the box model (margin, border, padding), flexbox and grid for layout, units (`px`, `rem`, `%`), colours (hex, rgba), transitions and transforms, media queries (`@media (prefers-reduced-motion: reduce)`), CSS variables.
+
+### 2.5 JavaScript
+
+JavaScript runs **in the browser**, after Django has already sent the page. In this project it draws the live countdown on the Focus page, sends quick-add text with `fetch()`, ticks task checkboxes without reloading, runs the browser fallback alarm, and drives the Three.js 3D scene.
+
+**Must know:** variables (`let`, `const`, old-style `var`), functions and arrow functions, the DOM (`document.querySelector`, `addEventListener`, `element.textContent`), events, `fetch()` and JSON, promises (`.then`), `setInterval` / `setTimeout`, `localStorage`, and the idea that JS cannot see your Python variables, only what Django put into the page.
+
+### 2.6 SQL (indirectly, through the ORM)
+
+You rarely write SQL in Django, but you must understand what it does, otherwise you cannot reason about speed or correctness.
+
+**Must know:** tables, rows, columns, primary keys, foreign keys, `SELECT ... WHERE ... ORDER BY`, `JOIN`, `COUNT / SUM`, indexes (why `models.Index` is in `Meta`), transactions, and what SQLite is (a database that lives in one file; used here).
+
+### 2.7 PowerShell / Batch (Windows scripting)
+
+Used in `desktop/installer/Install.ps1` to copy the program, make shortcuts and register start-with-Windows. **Must know:** running commands, variables (`$env:APPDATA`), `if`/`Test-Path`, `Copy-Item`, `Start-Process`.
+
+### 2.8 TOML, YAML and JSON (configuration and data)
+
+- **TOML** (`pyproject.toml`): project name, dependencies, tool settings.
+- **YAML** (`.github/workflows/*.yml`, `mkdocs.yml`, `.pre-commit-config.yaml`): automation and documentation configuration.
+- **JSON**: the format every API response in this project uses (`JsonResponse`), and what `fetch()` reads.
+
+### 2.9 Markdown
+
+`README.md`, `CLAUDE.md` and everything in `docs/` are Markdown: plain text with light formatting symbols. Learn `#` headings, lists, links and code fences.
+
+### 2.10 A learning path to proficiency
+
+| Stage | Goal | What to do |
+| 1. Python basics | Read any function in this project | Finish a Python course; write small scripts with dates and dictionaries. |
+| 2. Web basics | Explain a request and response | Chapter 3; use browser dev tools (Network tab) on any site. |
+| 3. First Django page | URL + view + template | Chapters 4, 5, 8; build a one-page site. |
+| 4. Data | Model + migration + admin | Chapter 6; add a Note model and manage it in /admin/. |
+| 5. Input | Forms, validation, CSRF | Chapter 7; build create/edit/delete for Notes. |
+| 6. JavaScript | Talk to Django from the page | Chapter 12; add a button that ticks a note with fetch(). |
+| 7. Quality | Tests, migrations in git | Chapter 10. |
+| 8. Shipping | Run it for real | Chapter 11 (waitress, PyInstaller). |
+
+!tip: You do not need all nine languages before you begin. Python plus basic HTML is enough to build your first page. Add the others as the project demands them, in the order of the table above.

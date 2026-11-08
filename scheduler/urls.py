@@ -67,3 +67,23 @@ urlpatterns += [
     path("api/projects/<int:project_id>/generate/", views.generate_schedule, name="generate_schedule"),
     path("api/projects/<int:project_id>/delete/", views.delete_project, name="delete_project"),
 ]
+
+urlpatterns += [
+    path("alarms/", views.alarm_settings, name="alarm_settings"),
+    path("api/alarms/today/", views.alarms_today_api, name="alarms_today_api"),
+]
+
+urlpatterns += [
+    path("home/", views.home, name="home"),
+    path("focus/", views.focus_day, name="focus_today"),
+    path("focus/<int:year>/<int:month>/<int:day>/", views.focus_day, name="focus_day"),
+    path("api/days/<int:year>/<int:month>/<int:day>/type/", views.set_day_type, name="set_day_type"),
+]
+
+urlpatterns += [
+    path("recurring/", views.recurring_list, name="recurring_list"),
+    path("recurring/<int:pk>/delete/", views.recurring_delete, name="recurring_delete"),
+    path("recurring/<int:pk>/toggle/", views.recurring_toggle, name="recurring_toggle"),
+    path("api/tasks/<int:year>/<int:month>/<int:day>/quick-add/", views.quick_add_api, name="quick_add_api"),
+    path("api/tasks/<int:year>/<int:month>/<int:day>/carry-over/", views.carry_over_api, name="carry_over_api"),
+]

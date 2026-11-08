@@ -265,6 +265,12 @@
     </div>
 </div>
 
+<style>
+  #ganttContainer { perspective: 1400px; }
+  .gantt3d { transform: rotateX(10deg); transform-origin: 50% 100%; filter: drop-shadow(0 18px 18px rgba(0,0,0,.45)); transition: transform .4s ease; }
+  #ganttContainer:hover .gantt3d { transform: rotateX(0deg); }
+  @media (prefers-reduced-motion: reduce) { .gantt3d { transform: none; transition: none; } }
+</style>
 <!-- Gantt Chart -->
 <div class="glass-card">
     <h3 class="section-title light" style="margin-bottom: 1.5rem;">📊 Gantt Chart</h3>
@@ -276,7 +282,7 @@
         min-height: 400px;
     ">
         {% if tasks %}
-        <svg id="ganttChart" style="width: 100%; min-width: 800px; height: 400px;"></svg>
+        <svg id="ganttChart" class="gantt3d" style="width: 100%; min-width: 800px; height: 400px;"></svg>
         {% else %}
             <div style="color: #cbd5e1; text-align: center; padding: 2rem;">
                 Add tasks and create schedules to visualize the Gantt chart

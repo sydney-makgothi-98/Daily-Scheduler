@@ -1,0 +1,46 @@
+{% extends "admin/scheduler/base.html" %}
+{% block title %}Recurring Tasks{% endblock %}
+{% block nav_recurring %}active{% endblock %}
+{% block content %}
+<h2 class="section-title">🔁 Recurring Tasks</h2>
+<p style="color:#cbd5e1;margin-bottom:1rem">Set a task once and it appears on the chosen weekdays by itself. Prayer times are never overwritten: a clash is skipped.</p>
+
+{% if messages %}{% for m in messages %}<div class="glass-card" style="margin-bottom:.6rem">{{ m }}</div>{% endfor %}{% endif %}
+
+<div class="glass-card" style="max-width:720px;margin-bottom:2rem">
+  <form method="post">
+    {% csrf_token %}
+    <label>Title<br><input class="form-input" name="title" required style="width:100%"></label>
+    <div style="margin:.8rem 0">
+      {% for num, name in weekdays %}<label style="margin-right:.8rem"><input type="checkbox" name="weekdays" value="{{ num }}"> {{ name }}</label>{% endfor %}
+    </div>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap">
+      <label>Start<br><input class="form-input" type="time" name="start_time" required></label>
+      <label>End<br><input class="form-input" type="time" name="end_time" required></label>
+      <label>Category<br><select class="form-select" name="category">{% for v, l in categories %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></label>
+      <label>Type<br><select class="form-select" name="task_type">{% for v, l in modes %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></label>
+    </div>
+    <button class="btn btn-primary" type="submit" style="margin-top:1rem">Save recurring task</button>
+  </form>
+</div>
+
+{% if items %}
+<div class="glass-card"><div class="table-container"><table>
+  <thead><tr><th>Title</th><th>Days</th><th>Time</th><th>Type</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for it in items %}
+    <tr>
+      <td>{{ it.title }}</td><td>{{ it.weekdays_display }}</td>
+      <td>{{ it.start_time|time:"H:i" }}–{{ it.end_time|time:"H:i" }}</td>
+      <td>{{ it.get_task_type_display }}</td>
+      <td>{% if it.is_active %}Active{% else %}Paused{% endif %}</td>
+      <td style="white-space:nowrap">
+        <form method="post" action="{% url 'recurring_toggle' it.pk %}" style="display:inline">{% csrf_token %}<button class="btn" type="submit">{% if it.is_active %}Pause{% else %}Resume{% endif %}</button></form>
+        <form method="post" action="{% url 'recurring_delete' it.pk %}" style="display:inline">{% csrf_token %}<button class="btn btn-danger" type="submit">Delete</button></form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% else %}<p style="color:#94a3b8">No recurring tasks yet.</p>{% endif %}
+{% endblock %}

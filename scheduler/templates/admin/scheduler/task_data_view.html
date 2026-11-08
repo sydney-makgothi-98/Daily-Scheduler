@@ -576,6 +576,7 @@
                                     {% if item.is_completed %}✓ Done{% else %}⏳ Pending{% endif %}
                                 </span>
                                 <span class="status-badge info">{{ item.category_display }}</span>
+                                <span class="status-badge info">{% if item.task_type == 'focus' %}🎯{% else %}🗂️{% endif %} {{ item.task_type_display }}</span>
                                 {% else %}
                                 <span class="status-badge {% if item.is_completed %}active{% else %}pending{% endif %}" data-prayer-status="{{ item.prayer_name }}">
                                     {% if item.is_completed %}✓ Done{% else %}⏳ Not Done{% endif %}
@@ -627,6 +628,62 @@
         </div>
     </div>
 </div>
+
+<!-- Day type -->
+<div class="glass-card" style="margin-top: 2rem; display:flex; gap:1rem; align-items:center; justify-content:center; flex-wrap:wrap;">
+    <strong style="color:#a78bfa">Type of day:</strong>
+    <button class="btn day-type-btn {% if day_type == 'multi' %}btn-primary{% endif %}" data-type="multi">🗂️ Multi-Task</button>
+    <button class="btn day-type-btn {% if day_type == 'focus' %}btn-primary{% endif %}" data-type="focus">🎯 Focus</button>
+    <a href="{% url 'focus_day' year=date.year month=date.month day=date.day %}" class="btn">Open Focus view →</a>
+</div>
+<script>
+document.querySelectorAll('.day-type-btn').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+    fetch("{% url 'set_day_type' year=date.year month=date.month day=date.day %}", {
+      method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+      body: JSON.stringify({day_type: b.dataset.type})
+    }).then(function () { location.reload(); });
+  });
+});
+</script>
+
+<!-- Quick add + carry over -->
+<div class="glass-card" style="margin-top: 1.5rem;">
+    <strong style="color:#a78bfa">⚡ Quick add</strong>
+    <div style="display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.6rem">
+        <input id="quickAddInput" class="form-input" style="flex:1; min-width:240px" placeholder="e.g. Study maths 4pm 1h #focus   (no time = first free slot)">
+        <button id="quickAddBtn" class="btn btn-primary" type="button">Add</button>
+        <button id="carryOverBtn" class="btn" type="button">↪ Carry over yesterday's unfinished</button>
+    </div>
+    <div id="quickAddMsg" style="margin-top:.6rem; color:#cbd5e1"></div>
+</div>
+<script>
+(function () {
+  var csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  var base = "/api/tasks/{{ date.year }}/{{ date.month }}/{{ date.day }}/";
+  var msg = document.getElementById('quickAddMsg');
+  function post(url, body) {
+    return fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf}, body: JSON.stringify(body || {})})
+      .then(function (r) { return r.json(); });
+  }
+  document.getElementById('quickAddBtn').onclick = function () {
+    var input = document.getElementById('quickAddInput');
+    post(base + 'quick-add/', {text: input.value}).then(function (d) {
+      if (d.success) { location.reload(); } else { msg.textContent = '⚠️ ' + d.error; }
+    });
+  };
+  document.getElementById('quickAddInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') document.getElementById('quickAddBtn').click();
+  });
+  document.getElementById('carryOverBtn').onclick = function () {
+    post(base + 'carry-over/').then(function (d) {
+      if (d.created.length) { location.reload(); }
+      else { msg.textContent = d.skipped.length ? 'Nothing moved: ' + d.skipped.join('; ') : 'Nothing to carry over.'; }
+    });
+  };
+})();
+</script>
 
 <!-- Create Task Button -->
 <div style="margin-top: 2rem; text-align: center; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">

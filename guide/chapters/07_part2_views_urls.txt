@@ -1,0 +1,201 @@
+## 20. The planner's views
+
+**Reminder of the shapes (chapter 14):** list, detail, create/edit, action, JSON endpoint. For each file below, the table says which shape each function is, so you can see the repetition.
+
+### 20.1 scheduler/views/personal_task_views.py
+
+| Function | Shape | URL name | What it does |
+| calendar_view | list | calendar_view | builds a 6x7 month grid with per-day task counts |
+| task_data_view | list + detail | task_data_view | merges tasks and prayers into one sorted timeline |
+| get_tasks_by_date_api | JSON | get_tasks_api | tasks of a date as JSON |
+| create_personal_task | create | create_personal_task | form pattern, subtasks JSON, auto breaks |
+| edit_personal_task | detail + edit | edit_personal_task | same, with `instance=task` |
+| delete_personal_task | action | delete_personal_task | POST only, redirect |
+| toggle_task_completion | JSON action | toggle_task_completion | tick/untick, record a TaskCompletion row |
+| create_subtask / toggle_subtask_completion / delete_subtask / get_task_subtasks | JSON | various | subtask CRUD for JavaScript |
+| get_yesterday_tasks / copy_tasks_from_yesterday | JSON | ...yesterday | copy-yesterday feature |
+
+#### calendar_view
+
+```python
+today = timezone.now().date()
+year = int(request.GET.get("year", today.year))
+month = int(request.GET.get("month", today.month))
+first_day = datetime(year, month, 1).date()
+start_of_week = first_day - timedelta(days=first_day.weekday())
+```
+
+`request.GET.get("year", default)` reads `?year=2026` from the URL, falling back to the current year. `weekday()` is 0 for Monday, so subtracting it finds the Monday on or before the 1st; the grid always starts on a Monday. A `while len(calendar_days) < 42` loop adds 6 weeks x 7 days. Then a loop runs three queries per day to count tasks.
+
+!without: An invalid `?month=13` makes `datetime(year, 13, 1)` raise `ValueError` and the user sees a 500 error page. A careful version would validate or catch it (the other date views do, returning a redirect or a 400).
+
+!alt: One query for the whole grid, then group in Python:
+
+```python
+from django.db.models import Count, Q
+rows = (PersonalTask.objects.filter(date__range=[calendar_days[0], calendar_days[-1]])
+        .values("date").annotate(total=Count("id"), done=Count("id", filter=Q(is_completed=True))))
+task_counts = {r["date"]: r for r in rows}
+```
+
+This is 1 query instead of 84. The current code is clearer for a beginner, and fast enough for local data.
+
+#### task_data_view
+
+Parses `year, month, day` from the URL (`<int:...>` already guaranteed integers, but a date like Feb 31 still fails, hence `try/except ValueError` then `redirect("calendar_view")`). It builds `timeline_items`, a list of dicts mixing prayers and tasks, each with a `type` key (`"prayer"` or `"task"`), then `sort(key=lambda x: x["start_time"])`. Prayer completion is read per prayer with `.first()`. New: each task item carries `task_type` and `task_type_display`, and `day_type` is added to the context for the toggle buttons.
+
+!why: The template needs one sorted list, so Python merges two different tables into a common dict shape first. Templates should loop, not decide.
+
+!alt: A `DayView(TemplateView)` with `get_context_data` is the CBV version. The function version keeps the merging logic in one readable place.
+
+#### create_personal_task
+
+Walk through it with the form diagram in chapter 7:
+
+1. Parse the date from the URL; invalid, so flash an error and redirect.
+2. On POST: `form = PersonalTaskForm(request.POST)`; if valid, `task = form.save(commit=False)` then `task.save()` (`commit=False` returns the unsaved object in case you want to adjust it first).
+3. `subtasks_json` is a hidden form field filled by JavaScript; `json.loads` turns it back into a list and each item creates a `SubTask`.
+4. `auto_insert_breaks(task)`; `messages.success(...)`; `redirect(...)`.
+5. On GET: `initial_data = {"date": date, "task_type": DayPlan.type_for(date)}` pre-fills the date and the day's type.
+6. Anything else falls through to `render(...)` with the (possibly error-carrying) form.
+
+!why: `initial_data` is what makes "set this day to Focus" change what new tasks default to, without touching the form class.
+
+!without: If you forget the final `return render(...)` after a failed `is_valid()`, the function returns `None` and Django raises "The view didn't return an HttpResponse object".
+
+!alt: `CreateView` (chapter 5.4) generates steps 2, 5 and 6; you would still override `form_valid` for subtasks and breaks.
+
+#### edit_personal_task
+
+Same, plus `get_object_or_404(PersonalTask, id=task_id)` to load the row (a missing id shows a proper 404 page instead of a crash) and `PersonalTaskForm(request.POST, instance=task)` so the form updates that row. After saving it deletes `task.breaks.all()` and regenerates them: a break is derived data, so the simplest correct approach is rebuild.
+
+#### delete_personal_task, toggle_*, subtask views
+
+Pure **action** shapes. `delete_personal_task`: `@require_http_methods(["POST"])`, delete, message, redirect. `toggle_task_completion`: reads JSON, saves `is_completed`, adds a `TaskCompletion` history row with the performance label, and returns JSON including the subtasks for the page to redraw.
+
+!why: These return JSON rather than redirecting because they are called by `fetch()`, which updates part of the page without reloading it.
+
+!without (security note): The original code marked these `@csrf_exempt`. For a local, single-user app that is a low risk; if the app is ever exposed to a network, remove the decorators and send the CSRF header from JavaScript as in chapter 9.3.
+
+#### copy_tasks_from_yesterday
+
+For each id: load the original; compute `start_time/end_time` (optionally overridden by `time_overrides` from the page); **new:** check the prayer window and the focus limit before creating; create the task (now copying `task_type`); copy subtasks. Errors are collected into a list and returned instead of stopping at the first problem, so one bad task does not block the rest.
+
+### 20.2 scheduler/views/mode_views.py (new)
+
+| Function | Shape | Notes |
+| home | list | counts today's multi and focus tasks (excluding breaks); renders the two big cards |
+| focus_day | list | optional year/month/day URL arguments (default today); loads focus tasks with `prefetch_related("subtasks")`; passes prayers, slots left, 50 and 10 |
+| set_day_type | JSON action | validates `day_type in TaskMode.values`, then `update_or_create(date=..., defaults=...)` |
+
+```python
+def focus_day(request, year=None, month=None, day=None):
+```
+
+Two URL patterns point at this one function: `focus/` (no arguments, so the defaults `None` apply) and `focus/<int:year>/<int:month>/<int:day>/`. This is the standard trick to serve "today" and "a given day" with one view.
+
+!why: `update_or_create` makes "set the day type" safe to repeat: the first call inserts, later calls update, and `DayPlan.date` being `unique` guarantees one row per day.
+
+!alt: As a CBV, `focus_day` is a `TemplateView` with `get_context_data`; `set_day_type` stays a function (it is an action, and generic views do not fit actions well).
+
+### 20.3 scheduler/views/alarm_views.py (new)
+
+- `alarms_today_api` (`@require_GET`): returns `{now, settings, events}` JSON. The browser fallback alarm reads it. `events_for_day` is the same function the desktop engine uses.
+- `alarm_settings` (`GET`/`POST`): on POST, boolean checkboxes are set from **presence** in `request.POST` (an unchecked checkbox sends nothing), and integers are clamped to safe ranges with `max(lo, min(hi, value))`; invalid text is skipped with `except ValueError: continue`.
+
+!why: Clamping on the server guarantees a stored value of `snooze_minutes=999999` cannot happen even if someone edits the HTML or sends their own POST.
+
+!alt: A `ModelForm` for `AlarmSetting` would give validation, widgets and error display almost for free. The manual version was kept minimal and shows how forms work underneath.
+
+### 20.4 scheduler/views/automation_views.py (new)
+
+- `recurring_list` (GET list + POST create): validates title/weekdays/times, creates a `RecurringTask`, then immediately calls `generate_recurring(today)` so a template that applies today appears right away. Warnings from the generator (prayer clash, focus limit) are shown through `messages.warning`.
+- `recurring_delete`, `recurring_toggle`: `@require_POST` actions, redirect back.
+- `quick_add_api`: `json.loads` the text, call `automation.quick_add`, return 400 with the error text or 200 with the new task's fields.
+- `carry_over_api`: calls `carry_over_incomplete(date - 1 day, date)` and returns what moved and what was skipped.
+
+!why: Delete is a POST form with a CSRF token, never a link. That is the rule from chapter 3.2.
+
+### 20.5 scheduler/views/prayer_views.py
+
+| Function | Shape |
+| prayer_settings | list |
+| get_prayer_times_api | JSON list (`values(...)` returns dicts, wrapped in `list()` for JSON) |
+| create_prayer / update_prayer | manual form handling (`request.POST.get`, `all([...])` checks, `messages`) |
+| delete_prayer | POST action |
+| toggle_prayer_completion | JSON action with status prayed / missed / not_yet |
+| get_daily_prayer_completions | JSON report with a completion percentage |
+| get_prayer_stats | JSON aggregate: `values("prayer_name").annotate(total=Count("id"), completed=Count("id", filter=Q(is_completed=True)))` |
+
+This file shows what Django looks like **without** `ModelForm`: the view reads each `request.POST.get(...)`, checks emptiness by hand and catches broad exceptions. It works, but every field is validated by hand.
+
+!alt: A `PrayerScheduleForm(ModelForm)` plus `CreateView`/`UpdateView` would remove roughly 60 lines and validate time formats automatically. This is the clearest "simpler Django" opportunity in the project.
+
+### 20.6 scheduler/views/project_views.py
+
+`projects_list`, `create_project` (accepts JSON or form data by checking `request.content_type`), `project_detail`, JSON actions for tasks and schedules, and `generate_schedule`: for each active `ProjectSchedule`, walk week by week from `project.start_date`, find the next matching weekday with `(schedule.day_of_week - current_date.weekday()) % 7`, compute the end time with `timedelta(hours=...)`, check conflicts, and create `PersonalTask` rows. **Changed in this work:** a candidate that overlaps a prayer window is now reported as a conflict (`reason: "overlaps Zhor"`) instead of being created, because this function creates tasks directly and so bypasses the form rules.
+
+!without: Before the fix a project schedule at 13:00 on a day where Zhor runs 13:00-13:30 would silently create an overlapping task: exactly the kind of leak a duplicated rule produces. The lesson: any code path that creates tasks must call the same rule function.
+
+### 20.7 scheduler/views/analytics_views.py
+
+Helpers (`get_date_range`, `calculate_completion_stats`, `get_daily_stats`, the subtask and prayer variants) return plain dicts; `analytics_dashboard` renders the page; `get_chart_data_api`, `get_subtask_chart_data_api`, `get_prayer_chart_data_api` return the Chart.js `labels` and `datasets` JSON.
+
+```python
+completed = tasks_query.filter(is_completed=True).count()
+total = tasks_query.count()
+"percentage": (completed / total * 100) if total > 0 else 0,
+```
+
+The `if total > 0 else 0` guard prevents `ZeroDivisionError` on days with no tasks.
+
+!tip: `date__range=[start, end]` is inclusive on both ends and becomes `BETWEEN` in SQL.
+
+### 20.8 The upstream views (queue_views, worker_views, job_views, queue_job_actions, queue_registry_actions, helpers)
+
+These belong to the upstream library and power the Queues / Workers admin screens. `queue_views.stats` shows queue statistics; `list_registry_jobs` pages through a Redis registry; `queue_workers`, `worker_details`, `workers_list` show workers; `job_detail` and `job_action` act on one job; `queue_job_actions` and `queue_registry_actions` apply bulk actions with a confirmation page. `helpers.py` holds shared pieces: `get_queue` (turns a missing queue into `Http404`), `_find_job`, `_enqueue_multiple_jobs` (re-queues jobs in one Redis **pipeline** for speed) and `_check_next_url`, which defends against **open-redirect** attacks by accepting only same-site "next" URLs (`url_has_allowed_host_and_scheme`). `@never_cache` on stats pages stops the browser from showing stale numbers.
+
+### 20.9 scheduler/views/__init__.py
+
+A re-export file: imports each view function and lists it in `__all__`, so `urls.py` can write `views.focus_day`. Adding a view requires adding its name here, or `urls.py` fails with `AttributeError: module 'scheduler.views' has no attribute ...`.
+
+## 21. URLs and app configuration
+
+### 21.1 scheduler/urls.py
+
+One list built up in blocks with `urlpatterns += [...]` (queues, workers, prayers, calendar/tasks, analytics, projects, then the new alarms, modes, recurring blocks). Patterns to notice:
+
+- **Order matters** only when two patterns could match the same URL; Django uses the first match.
+- API routes are grouped under `api/...`, page routes are plain.
+- `name=` on every route, so `{% url %}` and `reverse()` work.
+- `<int:task_id>` captures an integer; `<str:queue_name>` any text without a slash.
+
+!alt: Large apps often split into `urls/` sub-modules per feature, joined with `include()`. A single file is fine under ~100 routes.
+
+### 21.2 scheduler/apps.py
+
+`SchedulerConfig(AppConfig)` names the app (`name = "scheduler"`), a human label, and a default primary-key type (`default_auto_field = "django.db.models.AutoField"`). `ready()` is an empty hook that runs once at startup; it is where signals are connected if you use them.
+
+### 21.3 scheduler/__init__.py
+
+Reads the installed package version (`importlib.metadata.version`) and exposes the `@job` decorator (`from scheduler.decorators import job`) so users can write `from scheduler import job`.
+
+### 21.4 scheduler/settings.py (the library's own settings loader)
+
+Not Django's `settings.py`: this reads `SCHEDULER_QUEUES` and `SCHEDULER_CONFIG` *from* Django settings. `conf_settings()` validates: queues must be a dict; each entry a `QueueConfiguration` or dict; unknown keys in `SCHEDULER_CONFIG` raise `ImproperlyConfigured`. `get_queue_names()` and `get_queue_configuration(name)` serve the rest of the library; an unknown name raises `QueueNotFoundError`. It runs `conf_settings()` at import time so mistakes fail fast at startup, not hours later.
+
+!why: Validating configuration at startup turns a mysterious runtime failure into an immediate, readable error message.
+
+### 21.5 scheduler/decorators.py and the template tag modules
+
+**decorators.py** defines `@job(...)` as a **class** that is used like a decorator. `@job("low")` first calls `job.__init__` (it stores the queue and options and resolves a queue *name* into a Queue object). Python then calls the instance on the function: `job.__call__(f)`. That method defines `delay(*args, **kwargs)`, which calls `queue.create_and_enqueue_job(f, args=..., kwargs=...)`, attaches it as `f.delay`, records the function name in `JOB_METHODS_LIST`, and returns the original function unchanged. So `long_running_func()` still runs normally, and `long_running_func.delay()` queues it for a worker.
+
+!why: A class is used because the decorator takes options (`queue`, `timeout`, `at_front`, callbacks). A decorator **with arguments** needs one extra layer; a class with `__init__` (options) plus `__call__` (the wrapping) is a tidy way to write that layer.
+
+!without: With a plain one-level decorator you could not write `@job("low", timeout=30)`; Python would pass the string to the decorator as the function.
+
+`@wraps(f)` copies the original function's name and docstring onto `delay`, so tracebacks and tools show meaningful names.
+
+**templatetags/task_filters.py** (11 lines) registers one filter, `get_item`, which returns `dictionary.get(key)` when given a dict. Templates cannot use a variable as a dictionary key (`{{ task_counts.day }}` would look up the literal text "day"), so `{{ task_counts|get_item:day }}` is the workaround (the calendar template uses it). **templatetags/scheduler_tags.py** (82 lines) registers filters for the upstream job screens: `show_func_name`, `scheduled_task`, `latest_result`, `job_result`, `job_scheduled_task`, `job_status`, `job_runtime`, `job_scheduled_time`, plus its own `get_item`. A tag library is any module in a `templatetags/` folder that creates `register = template.Library()` and decorates functions with `@register.filter`; templates load it with `{% load scheduler_tags %}`.
+
+!alt: Prepare the data in the view instead (build `task_counts` as a list of `(day, counts)` pairs) and no filter is needed. Filters are right when the transformation is purely presentational.

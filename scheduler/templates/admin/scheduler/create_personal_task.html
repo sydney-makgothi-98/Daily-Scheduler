@@ -226,6 +226,35 @@
             </style>
         </div>
 
+        <!-- Task type -->
+        <div>
+            <label for="{{ form.task_type.id_for_label }}" style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">
+                🎯 Task Type *
+            </label>
+            <p style="color: #cbd5e1; font-size: 0.875rem; margin-bottom: 0.5rem;">
+                <strong>Multi-Task:</strong> your normal busy day, no limit.<br>
+                <strong>Focus:</strong> deep work, 50 min work / 10 min break. Max 2 focus tasks per day.
+            </p>
+            {% if form.task_type.errors %}
+                <ul class="error-messages" style="color: #ef4444; margin-bottom: 0.5rem; list-style: none;">
+                    {% for error in form.task_type.errors %}<li>{{ error }}</li>{% endfor %}
+                </ul>
+            {% endif %}
+            {{ form.task_type }}
+            <style>
+                #{{ form.task_type.id_for_label }} {
+                    width: 100%;
+                    padding: 0.75rem;
+                    border: 1px solid rgba(124, 58, 237, 0.3);
+                    border-radius: 8px;
+                    background: rgba(0, 0, 0, 0.2);
+                    color: #f8fafc;
+                    font-size: 1rem;
+                    cursor: pointer;
+                }
+            </style>
+        </div>
+
         <!-- Subtasks Section -->
         <div>
             <label style="display: block; color: #a78bfa; font-weight: 600; margin-bottom: 0.5rem;">

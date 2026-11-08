@@ -8,6 +8,17 @@ class TaskCategory(models.TextChoices):
     FUN = "fun", _("Fun Activity")
 
 
+class TaskMode(models.TextChoices):
+    MULTI = "multi", _("Multi-Task")
+    FOCUS = "focus", _("Focus")
+
+
+# Focus mode rules: at most two focus tasks per day, worked in 50-minute blocks with 10-minute breaks.
+FOCUS_MAX_PER_DAY = 2
+POMODORO_WORK_MINUTES = 50
+POMODORO_BREAK_MINUTES = 10
+
+
 class PersonalTask(models.Model):
     title = models.CharField(
         _("title"),
@@ -39,6 +50,21 @@ class PersonalTask(models.Model):
         default=TaskCategory.SECONDARY,
         help_text=_("Task category")
     )
+    task_type = models.CharField(
+        _("task type"),
+        max_length=10,
+        choices=TaskMode.choices,
+        default=TaskMode.MULTI,
+        help_text=_("Multi-task or Focus (max two focus tasks per day)")
+    )
+    recurring_source = models.ForeignKey(
+        "RecurringTask",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="generated_tasks",
+        help_text=_("Recurring template this task was generated from")
+    )
     is_completed = models.BooleanField(
         _("is completed"),
         default=False,
@@ -68,6 +94,7 @@ class PersonalTask(models.Model):
             models.Index(fields=["date"]),
             models.Index(fields=["category"]),
             models.Index(fields=["date", "category"]),
+            models.Index(fields=["date", "task_type"]),
         ]
 
     def __str__(self) -> str:
@@ -431,3 +458,82 @@ class ProjectSchedule(models.Model):
         start = datetime.combine(datetime.today(), self.start_time)
         end = start + timedelta(hours=self.duration_hours)
         return end.time()
+
+
+class AlarmSetting(models.Model):
+    """Singleton row holding alarm preferences (use ``AlarmSetting.get()``)."""
+
+    enabled = models.BooleanField(_("alarms enabled"), default=True)
+    break_alarm = models.BooleanField(_("ring when a break starts"), default=True)
+    prayer_alarm = models.BooleanField(_("ring when a prayer starts"), default=True)
+    task_alarm = models.BooleanField(_("ring when a task starts"), default=False)
+    break_lead_minutes = models.PositiveIntegerField(_("break heads-up (minutes)"), default=2)
+    prayer_lead_minutes = models.PositiveIntegerField(_("prayer heads-up (minutes)"), default=5)
+    snooze_minutes = models.PositiveIntegerField(_("snooze (minutes)"), default=5)
+    ring_seconds = models.PositiveIntegerField(_("ring length (seconds)"), default=60)
+    volume = models.PositiveIntegerField(_("volume (0-100)"), default=80)
+
+    class Meta:
+        verbose_name = _("Alarm Setting")
+        verbose_name_plural = _("Alarm Settings")
+
+    def __str__(self) -> str:
+        return "Alarm settings"
+
+    @classmethod
+    def get(cls) -> "AlarmSetting":
+        obj, _created = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class DayPlan(models.Model):
+    """Per-day setting: which kind of day this is (decides the default view and the default task type)."""
+
+    date = models.DateField(_("date"), unique=True)
+    day_type = models.CharField(_("day type"), max_length=10, choices=TaskMode.choices, default=TaskMode.MULTI)
+
+    class Meta:
+        verbose_name = _("Day Plan")
+        verbose_name_plural = _("Day Plans")
+
+    def __str__(self) -> str:
+        return f"{self.date}: {self.get_day_type_display()}"
+
+    @classmethod
+    def type_for(cls, day) -> str:
+        plan = cls.objects.filter(date=day).first()
+        return plan.day_type if plan else TaskMode.MULTI
+
+
+class RecurringTask(models.Model):
+    """A template that is turned into a real PersonalTask on each chosen weekday, automatically."""
+
+    title = models.CharField(_("title"), max_length=255)
+    description = models.TextField(_("description"), blank=True, null=True)
+    weekdays = models.CharField(
+        _("weekdays"), max_length=20, help_text=_("Comma-separated weekday numbers, 0=Monday ... 6=Sunday")
+    )
+    start_time = models.TimeField(_("start time"))
+    end_time = models.TimeField(_("end time"))
+    category = models.CharField(_("category"), max_length=20, choices=TaskCategory.choices, default=TaskCategory.SECONDARY)
+    task_type = models.CharField(_("task type"), max_length=10, choices=TaskMode.choices, default=TaskMode.MULTI)
+    is_active = models.BooleanField(_("is active"), default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["start_time", "title"]
+        verbose_name = _("Recurring Task")
+        verbose_name_plural = _("Recurring Tasks")
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.weekdays_display()})"
+
+    def weekday_set(self) -> set[int]:
+        return {int(x) for x in self.weekdays.split(",") if x.strip().isdigit()}
+
+    def weekdays_display(self) -> str:
+        names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        return ", ".join(names[d] for d in sorted(self.weekday_set()) if 0 <= d <= 6)
+
+    def runs_on(self, day) -> bool:
+        return self.is_active and day.weekday() in self.weekday_set()

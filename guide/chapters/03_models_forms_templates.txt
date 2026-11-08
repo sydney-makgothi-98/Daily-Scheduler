@@ -1,0 +1,247 @@
+## 6. Models, the ORM and migrations
+
+### 6.1 A model is a table
+
+```python
+from django.db import models
+
+class Book(models.Model):
+    title = models.CharField(max_length=200)
+    pages = models.PositiveIntegerField(default=0)
+    is_available = models.BooleanField(default=True)
+    added = models.DateTimeField(auto_now_add=True)
+```
+
+Django creates a table `library_book` with columns `id`, `title`, `pages`, `is_available`, `added`. Every instance is one row.
+
+| Field | Stores | Notes |
+| CharField(max_length) | short text | needs max_length |
+| TextField | long text | blank=True, null=True for optional |
+| IntegerField, PositiveIntegerField, FloatField | numbers | |
+| BooleanField | True/False | |
+| DateField, TimeField, DateTimeField | dates and times | auto_now_add sets it on creation |
+| ForeignKey(Other) | link to one row of another model | many-to-one |
+| ManyToManyField | many links both ways | |
+| OneToOneField | exactly one link | |
+
+Common options: `default=`, `null=True` (database may store NULL), `blank=True` (forms may leave it empty), `choices=`, `unique=True`, `help_text=`, `verbose_name`.
+
+!why: `null` and `blank` are different on purpose. `null` is a database fact; `blank` is a validation fact. A text field you may leave empty should usually be `blank=True` only (store an empty string). That is why `PersonalTask.description` uses both only because it was written that way; a cleaner choice is `blank=True` alone.
+
+### 6.2 Choices with TextChoices
+
+```python
+class TaskMode(models.TextChoices):
+    MULTI = "multi", "Multi-Task"
+    FOCUS = "focus", "Focus"
+
+task_type = models.CharField(max_length=10, choices=TaskMode.choices, default=TaskMode.MULTI)
+```
+
+The first value (`"multi"`) is stored in the database. The second is the label people see. Use `task.get_task_type_display()` to print the label, and compare in code with `task.task_type == TaskMode.FOCUS`.
+
+!without: Using bare strings everywhere (`if t.task_type == "focsu"`) hides typos until runtime. A named constant (`TaskMode.FOCUS`) makes your editor and tests catch the mistake.
+
+### 6.3 Relationships
+
+```python
+class SubTask(models.Model):
+    personal_task = models.ForeignKey(PersonalTask, on_delete=models.CASCADE, related_name="subtasks")
+```
+
+- `ForeignKey` makes each subtask belong to one task.
+- `on_delete=CASCADE`: deleting the task deletes its subtasks. Other choices: `SET_NULL` (keep the row, clear the link; used for `recurring_source`), `PROTECT` (refuse to delete).
+- `related_name="subtasks"` gives the *reverse* access: `task.subtasks.all()`.
+
+!without: Without `on_delete` Django refuses to start (it is mandatory), because it cannot guess whether orphaned rows should vanish or block deletion.
+
+### 6.4 Querying: the ORM
+
+[[diagram:orm]]
+
+```python
+PersonalTask.objects.all()                                  # every row
+PersonalTask.objects.filter(date=day, is_completed=False)   # AND of conditions
+PersonalTask.objects.exclude(id=task.id)
+PersonalTask.objects.get(id=3)                              # exactly one, else DoesNotExist
+PersonalTask.objects.filter(date=day).order_by("start_time")
+PersonalTask.objects.filter(date=day).count()
+PersonalTask.objects.filter(start_time__lt=end, end_time__gt=start).exists()   # overlap test
+PersonalTask.objects.create(title="x", date=day, ...)       # insert
+task.save(); task.delete()                                  # update / delete
+```
+
+Lookups use double underscores: `__lt`, `__gt`, `__lte`, `__gte`, `__in`, `__contains`, `__icontains`, `__startswith`, and across relationships `subtasks__is_completed=True`.
+
+!why: QuerySets are **lazy**. `PersonalTask.objects.filter(...)` runs no SQL until you loop over it, call `.count()` or slice it. You can keep chaining filters and Django builds a single query. The overlap test in `planning.overlaps` and the `.exists()` calls in the views rely on this.
+
+!without: Looping and calling `.filter()` inside the loop (as `calendar_view` does for each of 42 days) causes the "N+1 queries" problem: 42 separate database trips. It works for a desktop app with tiny data; on a busy site you would use one query with `values()` and `annotate()` instead.
+
+!alt: For one-trip efficiency across relations use `select_related("fk")` and `prefetch_related("reverse")`. `focus_day` uses `prefetch_related("subtasks")` so that listing every task's subtasks costs two queries total, not one per task.
+
+### 6.5 Meta, ordering and indexes
+
+```python
+class Meta:
+    ordering = ["date", "start_time"]
+    indexes = [models.Index(fields=["date", "task_type"])]
+```
+
+An **index** is a lookup shortcut in the database, like the index in a book. Add one for columns you filter on often. It speeds reads and slightly slows writes.
+
+### 6.6 Methods on models
+
+Put rules about one row on its model. `PersonalTask.get_performance_rating()`, `RecurringTask.runs_on(day)` and `DayPlan.type_for(day)` all live on the model so every view and test uses the same rule.
+
+!why: "Fat models, thin views": a rule written once on the model cannot disagree with itself in two views.
+
+### 6.7 Migrations
+
+[[diagram:migration_flow]]
+
+Change `models.py`, then:
+
+```text
+python manage.py makemigrations scheduler -n recurring_task   # writes scheduler/migrations/0029_recurring_task.py
+python manage.py migrate                                       # applies it
+```
+
+A migration is a small Python file saying "create this model" or "add this field". They are numbered and each lists its dependency, forming a chain. Commit them to git.
+
+!without: Edit a model and skip `makemigrations`, and the app crashes with `no such column`. Edit a migration that others already applied, and databases drift apart. Never edit applied migrations; add a new one.
+
+### 6.8 Worked example in another app: a shop
+
+```python
+class Product(models.Model):
+    name = models.CharField(max_length=100)
+    price = models.DecimalField(max_digits=8, decimal_places=2)
+
+class Order(models.Model):
+    customer = models.ForeignKey("auth.User", on_delete=models.CASCADE)
+    created = models.DateTimeField(auto_now_add=True)
+
+class OrderLine(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="lines")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    quantity = models.PositiveIntegerField(default=1)
+
+# total of one order
+total = sum(l.product.price * l.quantity for l in order.lines.select_related("product"))
+```
+
+Compare: `Order` is like `PersonalTask`, `OrderLine` is like `SubTask` (many children, `related_name`, `CASCADE`). `PROTECT` on product mirrors the idea of not letting a delete destroy history.
+
+## 7. Forms and validation
+
+### 7.1 Why forms exist
+
+User input is untrusted. A Django **form** declares the fields you expect, checks them, converts text to Python types, and gives you clean errors. A **ModelForm** builds the form from a model so you do not repeat yourself.
+
+```python
+class PersonalTaskForm(forms.ModelForm):
+    class Meta:
+        model = PersonalTask
+        fields = ["title", "date", "start_time", "end_time", "category", "task_type"]
+
+    def clean(self):                       # rules involving several fields
+        data = super().clean()
+        if data["start_time"] >= data["end_time"]:
+            raise ValidationError("End time must be after start time.")
+        return data
+```
+
+[[diagram:form_flow]]
+
+### 7.2 The standard view pattern
+
+```python
+def create_task(request):
+    if request.method == "POST":
+        form = PersonalTaskForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect("calendar_view")      # redirect after success
+    else:
+        form = PersonalTaskForm()                  # empty form on GET
+    return render(request, "create.html", {"form": form})
+```
+
+Three paths: show empty form, show form with errors (the same template, because `form` now carries the errors), or save and redirect.
+
+!why: **Redirect after POST** prevents the "resubmit form?" problem: if you rendered HTML directly after saving and the user pressed refresh, the browser would POST again and create a duplicate.
+
+!without: If you skip `is_valid()` and use `request.POST` directly, you accept empty titles, impossible dates and, worse, malicious input.
+
+### 7.3 Field-level and form-level checks
+
+- `clean_<field>(self)` validates one field.
+- `clean(self)` validates combinations, like end after start, or **a task not overlapping a prayer** (the rule this project added).
+- Raise `ValidationError("message")`; Django attaches it to the form and your template prints `form.non_field_errors`.
+
+### 7.4 Why the project reuses the form in quick-add
+
+`automation.quick_add` builds a `PersonalTaskForm` from parsed text instead of creating the row directly. One set of rules (prayer protection, focus limit, no past dates) then protects the form page, the quick-add box and the recurring generator alike.
+
+!alt: The same validation could go in the model's `clean()` method so even the admin enforces it. Forms are used here because the messages are user-facing and the rule needs request context.
+
+### 7.5 Worked example in another app: a sign-up form
+
+```python
+class SignUpForm(forms.Form):
+    email = forms.EmailField()
+    age = forms.IntegerField(min_value=13)
+    password = forms.CharField(widget=forms.PasswordInput, min_length=8)
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].lower()
+        if User.objects.filter(email=email).exists():
+            raise forms.ValidationError("That email is already registered.")
+        return email
+```
+
+A plain `Form` (not tied to a model) is right when the input does not map to one table.
+
+## 8. Templates and static files
+
+### 8.1 The template language in 10 lines
+
+```html
+{{ task.title }}                          <!-- print -->
+{{ task.start_time|time:"H:i" }}          <!-- filter: format -->
+{% if task.is_completed %}Done{% else %}Pending{% endif %}
+{% for st in task.subtasks.all %}{{ st.title }}{% endfor %}
+{% url 'edit_personal_task' task.id %}    <!-- build a URL from a route name -->
+{% csrf_token %}                           <!-- hidden security field inside every POST form -->
+{% include "partial.html" %}               <!-- paste another file -->
+{% load static %}<script src="{% static 'app/alarm.js' %}"></script>
+```
+
+!why: Templates get **automatic HTML escaping**: `{{ title }}` turns `<script>` into harmless text. That stops "cross-site scripting" attacks without you doing anything.
+
+!without: Building HTML in Python strings (`"<li>" + title + "</li>"`) is how XSS holes are created. Prefer templates, and only mark text as safe (`|safe`) when you built it yourself.
+
+### 8.2 Inheritance: one frame, many pages
+
+`base.html` holds the navbar, styles and scripts, with empty `{% block content %}{% endblock %}` holes. Every page starts with `{% extends "admin/scheduler/base.html" %}` and fills only the blocks it needs. Change the navbar once, every page changes.
+
+### 8.3 Static files
+
+CSS, JavaScript and images live in an app's `static/` folder and are referenced through `{% static 'path' %}`. In development Django serves them automatically. For deployment you run `collectstatic` and serve the collected folder (the `.exe` bundles it and serves `/static/` with `django.views.static.serve`).
+
+### 8.4 Where Python data meets JavaScript
+
+Django fills the template *before* sending it. JavaScript runs afterwards in the browser and cannot read Python variables, only what was printed into the page: HTML text, `data-*` attributes (like `data-start="{{ t.start_time|time:'H:i' }}"` in the Focus page) or a JSON block. That attribute approach is the simple, safe way to hand server values to scripts.
+
+### 8.5 Worked example in another app: a blog page
+
+```html
+{% extends "base.html" %}
+{% block content %}
+  <h1>{{ post.title }}</h1>
+  <p>By {{ post.author.username }} on {{ post.created|date:"j F Y" }}</p>
+  {{ post.body|linebreaks }}
+  <h2>Comments ({{ post.comments.count }})</h2>
+  {% for c in post.comments.all %}<p>{{ c.text }}</p>{% empty %}<p>No comments yet.</p>{% endfor %}
+{% endblock %}
+```

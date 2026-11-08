@@ -1,0 +1,313 @@
+# Part II: The project, file by file
+
+## 15. The map of the repository
+
+[[diagram:repo_map]]
+
+**How to read each file entry.** Every entry has the same layout: *What it is*, then *Walkthrough* (the important lines and why they exist), then boxes for **why**, **what happens without it**, and **alternatives**, then **Theory link** (the chapter in Part I that teaches the underlying idea).
+
+### 15.1 Data model at a glance
+
+[[diagram:er_diagram]]
+
+### 15.2 How an alarm travels
+
+[[diagram:alarm_flow]]
+
+### 15.3 Reading order for teaching
+
+1. `testproject/manage.py`, `settings.py`, `urls.py` (how a Django project starts).
+2. `scheduler/models/personal_task.py` (the data).
+3. `scheduler/urls.py` then `scheduler/views/personal_task_views.py` (a request becomes a page).
+4. `scheduler/forms.py` (validation).
+5. `scheduler/templates/admin/scheduler/home.html` and `focus_day.html` (the page).
+6. `scheduler/planning.py`, `automation.py`, `alarms.py` (rules kept outside views).
+7. `desktop/` (turning a website into a program).
+8. The tests (`scheduler/tests/test_modes.py` first).
+9. Finally the upstream engine (workers, Redis) in chapter 24.
+
+## 16. The testproject/ folder
+
+### 16.1 testproject/manage.py
+
+**What it is.** The command-line entry point for the development project.
+
+```python
+#!/usr/bin/env python                       # lets Unix run the file directly; ignored on Windows
+import os
+import sys
+
+if __name__ == "__main__":                  # only when run as a script, not when imported
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "testproject.settings")
+    from django.core.management import execute_from_command_line
+    execute_from_command_line(sys.argv)     # reads "runserver", "migrate", ... from the command line
+```
+
+!why: `DJANGO_SETTINGS_MODULE` is how Django learns which settings file to use; `setdefault` means "use this unless the environment already chose another". That is exactly how the desktop build picks `desktop.settings` instead: it sets the variable first.
+
+!without: Without the variable Django raises `ImproperlyConfigured: settings are not configured`. Importing Django inside the `if` (not at the top) keeps the variable assignment first, which is required.
+
+!alt: `manage_desktop.py` at the repository root is the same file with `desktop.settings`. Projects with several environments often use `python manage.py runserver --settings=myproj.settings_dev` instead of several manage files.
+
+**Theory link:** chapter 4.2.
+
+### 16.2 testproject/testproject/settings.py
+
+**What it is.** All configuration for development and for the test suite. Read top to bottom:
+
+```python
+BROKER_PORT = os.getenv("BROKER_PORT", "6379")
+SCHEDULER_QUEUES = {"default": QueueConfiguration(URL=f"redis://localhost:{BROKER_PORT}/0"), ...}
+```
+
+Environment variables (`os.getenv`) let the same file work on different machines. `SCHEDULER_QUEUES` is a setting the **upstream scheduler** reads: a dict of queue names to Redis URLs. Five queues exist so the library's tests can try priorities and databases.
+
+```python
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SECRET_KEY = "h0_r$4#4@..."      # fine for a throwaway dev project, NOT for production
+DEBUG = True
+ALLOWED_HOSTS = ["*"]
+```
+
+!why: `BASE_DIR` is computed from the file's own location so the project works wherever the folder is copied. `ALLOWED_HOSTS = ["*"]` is acceptable only because this is a local development project.
+
+!without: A hard-coded absolute path like `C:\Users\...\db.sqlite3` breaks the moment you move the folder or give the project to a colleague.
+
+```python
+INSTALLED_APPS = [ "django.contrib.admin", ..., "scheduler.apps.SchedulerConfig" ]
+MIDDLEWARE = [ ... CsrfViewMiddleware ... ]
+ROOT_URLCONF = "testproject.urls"
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache", ..., "BROKER": "fakeredis"}}
+```
+
+`INSTALLED_APPS` ends with the scheduler app; that line is what makes Django find its models, templates and migrations. The cache points to Redis (the upstream tests use FakeRedis).
+
+```python
+TEMPLATES = [{"BACKEND": "...DjangoTemplates", "DIRS": [], "APP_DIRS": True, "OPTIONS": {"context_processors": [...]}}]
+```
+
+`APP_DIRS: True` means "look for `templates/` folders inside each installed app". That is why `scheduler/templates/admin/scheduler/home.html` is found as `"admin/scheduler/home.html"`. **Context processors** add variables to every template automatically (`request`, `user`, `messages`).
+
+```python
+DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": os.path.join(BASE_DIR, "db.sqlite3")}}
+USE_TZ = False
+TIME_ZONE = "UTC"
+```
+
+!why: `USE_TZ = False` stores plain "naive" local date-times, which suits a personal planner whose times mean "10:00 on my clock". With `USE_TZ = True` every time would be stored in UTC and converted, which is correct for a global site but needlessly confusing here.
+
+!without: Mixing the two (naive `datetime.now()` while `USE_TZ = True`) triggers warnings and wrong times. The alarm engine uses `datetime.now()` and relies on `USE_TZ = False` for exactly that reason.
+
+**Theory link:** 4.3, 6.1.
+
+### 16.3 testproject/testproject/urls.py
+
+```python
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("", include("scheduler.urls")),
+    path("test-view/", views.my_view),
+    path("run-job/", views.run_job),
+]
+```
+
+`include("scheduler.urls")` mounts the whole app's URL table at the site root. `path("", ...)` means "no prefix".
+
+!why: Apps carry their own `urls.py`, so the project file stays tiny and an app can be mounted at `/`, `/planner/` or anywhere.
+
+!without: If the app had no `urls.py` of its own, every project that used it would have to copy 70 route lines.
+
+### 16.4 testproject/testproject/views.py
+
+```python
+@cache_page(timeout=500)
+def my_view(request):
+    return HttpResponse("Yeah")
+
+@job("low")
+def long_running_func():
+    time.sleep(30)
+
+def run_job(request):
+    if request.method == "GET":
+        long_running_func.delay()
+        return HttpResponse("OK - got a GET request")
+    return HttpResponse(status=405)
+```
+
+Two demo views used by the upstream test suite. `@cache_page` stores the response for 500 seconds. `@job("low")` is the upstream decorator that adds `.delay()`, which puts the function on the Redis queue named `low` for a worker to run. `status=405` is "Method Not Allowed".
+
+!alt: The method check could be `@require_GET`, as used elsewhere in this project.
+
+### 16.5 testproject/testproject/wsgi.py and __init__.py
+
+`wsgi.py` exposes `application`, the WSGI callable (chapter 4.7). `__init__.py` is empty; its existence makes the folder a Python package so `import testproject.settings` works.
+
+## 17. The desktop/ folder (the Windows program)
+
+[[diagram:desktop_arch]]
+
+### 17.1 desktop/__init__.py
+
+Empty. Marks `desktop` as a package so `python -m desktop.main` and `from desktop.engine import AlarmEngine` work.
+
+### 17.2 desktop/paths.py
+
+```python
+FROZEN = getattr(sys, "frozen", False)
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / APP_NAME
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+```
+
+- `sys.frozen` is set only inside a PyInstaller program; `getattr(..., False)` is a safe way to read an attribute that may not exist.
+- `_MEIPASS` is where PyInstaller unpacks bundled files. When running from source, the repo root is used instead.
+- `DATA_DIR` is `%APPDATA%\DailySchedule`: the writable place for the database.
+
+!why: Read-only files (templates, static) and writable data (your tasks) must live in different places. Program folders can be read-only and are replaced on update; your tasks must survive updates.
+
+!without: If the database lived next to the `.exe`, reinstalling or updating would delete your tasks, and a program in `Program Files` could not even write to it.
+
+### 17.3 desktop/settings.py
+
+Same shape as `testproject/settings.py` with deliberate differences:
+
+| Setting | desktop value | Why |
+| DESKTOP_MODE | True | a flag other code can check |
+| DEBUG | False | no source code or settings shown on errors |
+| ALLOWED_HOSTS | 127.0.0.1, localhost | only this PC may reach it |
+| SECRET_KEY | random, saved in secret.json | each install has its own key |
+| SCHEDULER_CONFIG | Broker.FAKEREDIS | no Redis server needed |
+| SCHEDULER_QUEUES | {} | the planner uses no queues |
+| CACHES | LocMemCache | in-memory cache inside the process |
+| DATABASES NAME | DATA_DIR / db.sqlite3 | data survives updates |
+| STATIC_ROOT | RESOURCE_DIR / staticfiles | bundled by collectstatic |
+
+```python
+_secret_file = DATA_DIR / "secret.json"
+if not _secret_file.exists():
+    _secret_file.write_text(json.dumps({"key": secrets.token_urlsafe(50)}))
+SECRET_KEY = json.loads(_secret_file.read_text())["key"]
+```
+
+!why: `secrets.token_urlsafe` makes a cryptographically strong random key. Writing it once means the same key is reused next launch, so existing sessions stay valid.
+
+!without: Generating a new key each launch would sign you out every time; shipping one fixed key in the repository would let anyone forge sessions for every copy of the app.
+
+### 17.4 desktop/urls.py
+
+```python
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    re_path(r"^static/(?P<path>.*)$", serve, {"document_root": settings.STATIC_ROOT}),
+    path("", include("scheduler.urls")),
+]
+```
+
+With `DEBUG = False` Django no longer serves static files, so this route does it using `django.views.static.serve`. `re_path` takes a regular expression: `(?P<path>.*)` captures the rest of the URL as `path`.
+
+!alt: The usual production answer is the **WhiteNoise** library (middleware that serves static files efficiently). One extra route avoids a dependency for a single-user program.
+
+### 17.5 desktop/wsgi.py
+
+Like `testproject/wsgi.py` but defaulting to `desktop.settings`. `main.py` imports `application` from here and hands it to waitress.
+
+### 17.6 desktop/engine.py (the alarm engine)
+
+**What it is.** A background thread that rings alarms. Read it in four parts.
+
+**Part 1: sound.** `build_alarm_wav(volume_pct)` creates a short beep pattern *in memory* as WAV bytes: four tones (880/1100/880/1100 Hz) then a pause. `amp = 32767 * 0.6 * volume/100` scales the loudness. `start_sound` plays it with `winsound.PlaySound(bytes, SND_MEMORY | SND_ASYNC | SND_LOOP)`: from memory, without blocking, repeating. `stop_sound` uses `SND_PURGE`.
+
+!why: `winsound` cannot change volume, so the volume is baked into the waveform. Generating the tone in code means no audio file has to ship, and no licence question arises.
+
+!without: `SND_ASYNC` omitted means the call blocks until the sound ends and the whole engine freezes; `SND_LOOP` omitted means a single beep that the user can miss.
+
+**Part 2: toast and "prayed".** `toast()` shows a Windows notification with `winotify`; every call is in `try/except` because a notification failure must never stop an alarm. `mark_prayed()` records a prayer using `update_or_create`, the ORM call that updates if the row exists and inserts if not, so pressing the button twice cannot create duplicates (the table also has a unique constraint on `(prayer_name, date)`).
+
+**Part 3: the engine class.**
+
+```python
+class AlarmEngine(threading.Thread):
+    def run(self):
+        while not self._stop_evt.wait(POLL_SECONDS):
+            self.tick(datetime.now())
+    def tick(self, now):
+        self._automate(now)                           # recurring tasks + missed prayers, at most once a minute
+        cfg = AlarmSetting.get()
+        if self.muted or not cfg.enabled: return []
+        candidates = [e for e in due_events(now, cfg) if e.key not in self._fired]
+        ...
+```
+
+- `_fired` is a set of event keys already rung. This is what makes alarms ring **once**, even though `due_events` keeps returning an event for 90 seconds.
+- `_snoozed` holds `(wake_time, event)` pairs; when the time passes they ring again.
+- `tick` returns the events it fired, which makes it testable (the tests call it with a fake `now`).
+- `self._lock` protects `_snoozed`, because the pop-up window runs on another thread and calls `snooze`.
+
+**Part 4: the pop-up window.** `_show_window` builds a `tkinter` window: always on top (`-topmost`), centred, with Prayed (prayers only), Snooze and Dismiss buttons, and auto-closing after `ring_seconds`. It runs in its own thread because Tk blocks in `mainloop()`.
+
+!why: Heads-up alarms (2 min before a break, 5 before a prayer) only toast and beep once and never open a window, because stealing focus *before* the event would be annoying. Only the real start opens the window.
+
+!without: Opening a second window while a prayer window is up would bury the prayer; `ring()` explicitly refuses to let a break or task interrupt a ringing prayer.
+
+!alt: A single-file alternative is `plyer` or `win10toast` for notifications and `playsound` for audio; the standard-library route chosen here has fewer dependencies to bundle.
+
+**Theory link:** 12 (threads), 13.5 (Windows integration).
+
+### 17.7 desktop/main.py
+
+```python
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "desktop.settings")   # before Django is imported
+```
+
+Function by function:
+
+| Function | Job |
+| free_port() | binds port 0 so the OS picks an unused port; avoids "port already in use" |
+| already_running() | named mutex (CreateMutexW); if it exists, a second copy exits |
+| launch_command(), autostart_enabled(), set_autostart() | read/write the HKCU Run registry key |
+| start_server(port) | runs waitress on a daemon thread |
+| wait_for_server(port) | polls /api/alarms/today/ until the site answers, so the window never opens on a blank page |
+| tray_image() | draws the tray icon with Pillow, so no .ico file is needed |
+| main() | the orchestration below |
+
+`main()` order of events: parse `--background` / `--selftest`; exit if already running; `django.setup()`; `call_command("migrate")` so a fresh database is created and updated at every start; start the server; wait for it; start the alarm engine; create the window (hidden when `--background`); create the tray; run the GUI loop.
+
+```python
+def on_closing():
+    if state["quitting"]: return True
+    window.hide()          # keep running in the tray so alarms still ring
+    return False           # False cancels the close
+```
+
+!why: Hiding rather than closing is the entire reason alarms work with the "window closed". The process, and so the engine thread, survives. Real quitting is only via the tray menu.
+
+!without: If closing the window ended the program, your 14:50 prayer alarm would silently never ring after you closed the planner at lunch.
+
+`--selftest` boots everything, checks the API answers, prints and exits with code 0 or 1. It exists because a windowed `.exe` has no console, so a build can be checked automatically.
+
+### 17.8 desktop/launcher.py
+
+```python
+from desktop.main import main
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+PyInstaller runs a script as `__main__`, where relative imports like `from .paths import ...` would fail. This tiny script imports the package properly and calls `main`.
+
+### 17.9 desktop/build.py
+
+Runs `collectstatic`, then PyInstaller with these decisions: `--windowed` (no console), `--collect-all scheduler` (include templates, static, migrations, which PyInstaller cannot discover by itself), `--hidden-import` for modules loaded by name (`desktop.settings`, `pystray._win32`, `winotify`), `--add-data staticfiles` for the collected CSS/JS. `package()` then zips the folder with the installer scripts.
+
+### 17.10 desktop/installer/Install.ps1 and Uninstall.ps1
+
+Install: copies the folder to `%LOCALAPPDATA%\Programs\DailySchedule`, creates Start-Menu and Desktop shortcuts through the `WScript.Shell` COM object, writes the autostart registry value, launches the app. `$ErrorActionPreference = "Stop"` makes any failure abort instead of continuing half-installed. Uninstall removes those and leaves `%APPDATA%\DailySchedule` (your data) untouched.
+
+!why: `%LOCALAPPDATA%` and `HKCU` are per-user, so no administrator rights are needed. That keeps the installer simple and safe.
+
+!alt: A professional installer (Inno Setup, MSIX) gives uninstall entries in Windows Settings and optional code signing; it was not installed on this machine, so scripts were used.
+
+### 17.11 manage_desktop.py
+
+A copy of `manage.py` with `desktop.settings`. Used by `build.py` to run `collectstatic` against the desktop configuration.

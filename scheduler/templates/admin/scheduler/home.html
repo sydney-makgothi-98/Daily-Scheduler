@@ -1,0 +1,50 @@
+{% extends "admin/scheduler/base.html" %}
+{% block title %}Home - Daily Schedule{% endblock %}
+{% block nav_home %}active{% endblock %}
+{% block content %}
+{% load static %}
+<style>
+  #hero3d { width:100%; height:260px; display:block; margin-bottom:-1rem; }
+  .mode-stage { perspective: 1200px; display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:2rem; margin:2rem 0; }
+  .mode-card { transform-style:preserve-3d; transition:transform .15s ease-out, box-shadow .3s; display:block; text-decoration:none; color:#f8fafc;
+    padding:2.5rem 2rem; border-radius:20px; min-height:300px; border:1px solid rgba(124,58,237,.35);
+    background:linear-gradient(145deg,rgba(124,58,237,.25),rgba(15,23,42,.9)); box-shadow:0 20px 40px rgba(0,0,0,.4); }
+  .mode-card.focus { background:linear-gradient(145deg,rgba(14,165,233,.25),rgba(15,23,42,.9)); border-color:rgba(14,165,233,.4); }
+  .mode-card:hover { box-shadow:0 30px 60px rgba(124,58,237,.35); }
+  .mode-card > * { transform:translateZ(40px); }
+  .mode-card .big { font-size:4rem; }
+  .mode-card h2 { margin:.5rem 0; font-size:1.8rem; }
+  .mode-card p { color:#cbd5e1; margin:.4rem 0; }
+  .pill { display:inline-block; padding:.25rem .8rem; border-radius:999px; background:rgba(255,255,255,.1); margin-top:.8rem; font-size:.85rem; }
+  @media (prefers-reduced-motion: reduce) { .mode-card { transition:none; } }
+</style>
+<canvas id="hero3d" aria-hidden="true"></canvas>
+<h2 class="section-title">Good day — {{ today|date:"l, F j" }}</h2>
+<p style="color:#cbd5e1">Today is set as a <strong>{{ day_type|title }}</strong> day. Prayer times are fixed in both modes.</p>
+<div class="mode-stage">
+  <a class="mode-card" href="{% url 'task_data_view' year=today.year month=today.month day=today.day %}" data-tilt>
+    <div class="big">🗂️</div><h2>Multi-Task</h2>
+    <p>Schedule as many tasks as the day needs: timeline, subtasks, projects, analytics.</p>
+    <span class="pill">{{ multi_count }} task{{ multi_count|pluralize }} today</span>
+  </a>
+  <a class="mode-card focus" href="{% url 'focus_today' %}" data-tilt>
+    <div class="big">🎯</div><h2>Focus</h2>
+    <p>No more than {{ focus_max }} tasks. 50 minutes of work, 10-minute breaks, one thing at a time.</p>
+    <span class="pill">{{ focus_count }} / {{ focus_max }} focus tasks today</span>
+  </a>
+</div>
+<script src="{% static 'app/vendor/three.min.js' %}"></script>
+<script src="{% static 'app/hero3d.js' %}"></script>
+<script>
+(function () {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('[data-tilt]').forEach(function (el) {
+    el.addEventListener('mousemove', function (e) {
+      var r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+      el.style.transform = 'rotateY(' + (x * 14) + 'deg) rotateX(' + (-y * 14) + 'deg)';
+    });
+    el.addEventListener('mouseleave', function () { el.style.transform = ''; });
+  });
+})();
+</script>
+{% endblock %}

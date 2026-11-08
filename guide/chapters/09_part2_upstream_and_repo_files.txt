@@ -1,0 +1,153 @@
+## 25. The upstream engine (django-tasks-scheduler), file by file
+
+[[diagram:upstream_arch]]
+
+**How honest to be about depth.** The planner files (chapters 16 to 24) are explained line by line because they are the ones you wrote and will teach from. The upstream engine is a published library by another author; this chapter explains **what each file is for, how it is structured, and which Django or Python idea it demonstrates**, using the real class and function names from the source. It is the right level to teach "how a larger Django app is organised", and the outlines below were read from the actual files.
+
+**The big picture.** A `Task` row in the database says "run this function on a schedule". A `WorkerScheduler` process looks for due tasks and puts a **job** on a **queue** stored in Redis. One or more `Worker` processes take jobs off the queue and run them, record results and heartbeats in Redis, and coordinate through locks so two schedulers never enqueue the same job twice.
+
+### 25.1 scheduler/models/task.py (463 lines): the Task model
+
+| Piece | Purpose |
+| `TaskType` | an enum-like choices class: once, repeatable (every N units), cron (a cron expression) |
+| `Task(models.Model)` | one scheduled task: name, callable path, queue, enabled flag, schedule fields per type, timeouts, TTLs, failure bookkeeping (failed runs, last successful run) |
+| `callable_func`, `function_string` | turn the stored dotted path (`"myapp.tasks.send"`) into the real function with an import |
+| `parse_args`, `parse_kwargs` | read the related `TaskArg` / `TaskKwarg` rows into Python lists/dicts |
+| `enqueue_to_run`, `unschedule`, `_schedule_time` | put the job on its queue now or at its next time, or remove it |
+| `get_next_cron_time(...)` | uses the `croniter` library to compute the next time from a cron string |
+| `run_task`, `get_scheduled_task`, `success_callback`, `failure_callback` | the functions a worker actually calls |
+| `get_queue_choices` | builds the queue dropdown from `SCHEDULER_QUEUES` |
+
+Why it is a good teaching file: it shows **one model that behaves differently by type** (a "type" column and per-type fields instead of three tables, which the migrations 0019/0020 consolidated), callbacks, and generic relations to arguments.
+
+### 25.2 scheduler/models/args.py (96 lines)
+
+`BaseTaskArg` is an **abstract base** (shared fields and `clean`/`save`/`value`), with concrete `TaskArg` and `TaskKwarg`. Each argument has a type (str, int, bool, datetime, callable...) and a text value; `value()` converts text back into the right Python type. They link to a task through Django's **generic relations** (`ContentType` + `object_id`), so arguments can belong to any model.
+
+!why: Storing every value as text plus a type tag keeps one simple table that can hold any argument kind. The price is a conversion step on read, done in `value()`.
+
+!alt: Store arguments as one JSON field on the Task (`models.JSONField`). It is simpler to read and write; the arguments inline editor in the admin is what justified separate rows here.
+
+### 25.3 scheduler/models/ephemeral_models.py (21 lines) and admin/ephemeral_models.py (43 lines)
+
+`Queue` and `Worker` are **placeholder models with no table** (`managed = False`; see migrations 0010 and 0011). They exist only so the admin shows Queues and Workers screens. `ImmutableAdmin` removes add/change permissions, and `QueueAdmin` / `WorkerAdmin` override `changelist_view` to render the Redis-backed pages instead of a table listing.
+
+!why: This is the standard trick for showing non-database data in the Django admin: a managed-false model gives the admin something to register and a menu entry, and you replace the page with your own view.
+
+### 25.4 scheduler/admin/task_admin.py (251 lines)
+
+`TaskAdmin` configures the Task admin: `JobArgInline` and `JobKwargInline` (edit arguments on the same page), `JobMethodsDatalistWidget` (a text input that suggests functions registered with `@job`), `formfield_for_dbfield` to swap that widget in, `task_schedule` and `next_run` (computed columns), admin **actions** `enable_selected`, `disable_selected`, `enqueue_job_now`, and `delete_queryset` / `delete_model` overrides that also remove the job from Redis. Helpers `job_execution_of` and `get_job_executions_for_task` read past executions.
+
+### 25.5 scheduler/types/ (3 files)
+
+`settings_types.py` defines `SchedulerConfiguration` and `QueueConfiguration` as **dataclasses** (`@dataclass(slots=True, kw_only=True)`; the queue one is also `frozen=True`, so it cannot change after creation) and the `Broker` enum (REDIS, FAKEREDIS, VALKEY). Every tunable has a documented default: `SCHEDULER_INTERVAL = 10` seconds, `DEFAULT_JOB_TIMEOUT = 5 * 60`, `DEFAULT_WORKER_TTL = 10 * 60`, `FAIL_FAST_QUEUE_PROBING = True`, and so on. `broker_types.py` maps each broker to its connection, sentinel and error classes (`BrokerMetaData`). `__init__.py` re-exports the public names.
+
+!why: A dataclass gives you typed settings with defaults, a readable repr and typo protection (`scheduler/settings.py` rejects unknown keys). It is the modern replacement for a bag of module-level constants.
+
+!without: With `slots=True`, assigning a misspelt attribute (`cfg.SCEDULER_INTERVAL = 5`) raises `AttributeError` instead of silently creating a new, unused attribute.
+
+### 25.6 scheduler/redis_models/ (9 files): Redis as a mini database
+
+| File | Contents |
+| base.py (278 lines) | `BaseModel`, `HashModel`, `StreamModel`: a tiny ORM over Redis. A dataclass subclass becomes a Redis hash; `save`, `get`, `get_many`, `delete`, `all`, `count`, `exists`. Helpers `_serialize` / `_deserialize` / `decode_dict` convert between Python and Redis bytes |
+| job.py (337) | `JobModel`, `JobStatus`: one job's state (queued, started, finished, failed, scheduled, stopped, canceled), its function, args, timeouts, callbacks; `prepare_for_execution`, `after_execution`, `expire`, `persist` |
+| result.py (75) | `Result`, `ResultType`: stored output of a run (`create`, `save`, `fetch_latest`) |
+| worker.py (120) | `WorkerModel`, `WorkerStatus`: a worker's registered state, heartbeat and cleanup of dead workers |
+| lock.py (36) | `KvLock` (a lock stored as a Redis key with an expiry), `SchedulerLock`, `QueueLock` |
+| registry/ (folder: `base_registry.py`, `queue_registries.py`) | `JobNamesRegistry` is the base class (plus `DequeueTimeout`); `QueuedJobRegistry`, `ScheduledJobRegistry`, `ActiveJobRegistry`, `FinishedJobRegistry`, `FailedJobRegistry` and `CanceledJobRegistry` each track the names of jobs in one state |
+| `__init__.py` | re-exports the public names (`JobModel`, `Result`, `WorkerModel`, the locks and every registry) |
+
+!why: Distinct small classes with one job each (a job, a result, a lock) are easier to test than one big module. The locks use **expiring keys**, so if a process crashes its lock disappears on its own and another takes over.
+
+!without: A lock without an expiry would stay held forever after a crash and the scheduler would never run again.
+
+### 25.7 scheduler/helpers/ (8 files)
+
+| File | Contents |
+| callback.py | `Callback`: wraps a function or dotted path for success/failure/stop hooks, with a timeout; `CallbackSetupError` |
+| timeouts.py | `BaseDeathPenalty`, `UnixSignalDeathPenalty` (uses `SIGALRM`), `TimerDeathPenalty` (a thread timer, used on Windows where `SIGALRM` does not exist), `JobTimeoutException` |
+| sentry_integration.py | optional error reporting to Sentry |
+| utils.py | `current_timestamp`, `utcnow`, `callable_func` (import a function from a dotted path) |
+| queues/getters.py | `get_queue`, `get_queue_connection`, `get_all_workers`, and `_fail_fast_kwargs` (short timeouts so a dead Redis cannot freeze an admin page) |
+| queues/queue_logic.py (432) | the `Queue` class: `create_and_enqueue_job`, `dequeue_any`, `run_sync`, registries, `queue_perform_job`, `get_current_job`, and the exceptions `NoSuchJobError`, `InvalidJobOperation`, `NoSuchRegistryError` |
+| queues/__init__.py | re-exports |
+| __init__.py | empty (package marker) |
+
+`_DEATH_PENALTY_CLASS = UnixSignalDeathPenalty if hasattr(signal, "SIGALRM") else TimerDeathPenalty` (in `types/settings_types.py`) is a neat portability line: it picks the timeout mechanism by **feature detection**, not by checking the operating system.
+
+### 25.8 scheduler/worker/ (3 files)
+
+- `scheduler.py` (164): `WorkerScheduler` acquires the `SchedulerLock`, then loops: `enqueue_scheduled_jobs()` moves due tasks onto queues every `SCHEDULER_INTERVAL` seconds, sends `heartbeat`s and releases the lock on `stop`. `run_scheduler` is the process entry point.
+- `worker.py` (895): `Worker` loops `work()`: dequeue a job, `prepare_for_execution`, run it under a timeout, record the result, `handle_job_failure`, update heartbeats, `run_maintenance_tasks`, install signal handlers for clean shutdown. Variants: `SimpleWorker` (runs jobs in-process, easier to debug), `RoundRobinWorker` and `RandomWorker` (change the **dequeue strategy**: how queues are ordered with `reorder_queues`), and `create_worker` builds one from queue names. `StopRequested`, `WorkerNotFound`, `QueueConnectionDiscrepancyError` are its custom exceptions.
+- `__init__.py` exposes the public pieces.
+
+!alt: For most Django projects Celery (heavier, many features) or Django-Q / Huey / django-tasks (lighter) fill the same role. This library keeps the schedule **in the Django database and admin**, which is its selling point.
+
+### 25.9 scheduler/management/commands/ (6 commands + 2 package markers)
+
+A management command is a class `Command(BaseCommand)` with `add_arguments(parser)` (declare options) and `handle(*args, **options)` (do the work), run as `python manage.py <filename>`.
+
+| Command | Verified options | Does |
+| scheduler_worker | --name, --burst, --without-scheduler, --worker-ttl, --max-jobs, --max-idle-time, --fork-job-execution, --pid, --sentry-dsn, --sentry-debug, --sentry-ca-certs | start a worker (and its scheduler, unless told not to) on the named queues; `--burst` exits when the queues are empty |
+| scheduler_stats | --interval, --json, --yaml | print queue statistics as a text dashboard; `--interval` repeats it |
+| export | --filename, --output, --enabled, and a format of json or yaml (default json) | export scheduled tasks |
+| import | --filename, --format, --reset, --update | import tasks from a file; `--reset` clears first, `--update` updates matches |
+| run_job | --queue, --timeout, --result-ttl, plus positional args | enqueue a named function immediately |
+| delete_failed_executions | --queue, --func, --dry-run | purge failed job records, optionally only one function or only a preview |
+| __init__.py (two of them) | package markers for `management` and `commands` |
+
+### 25.10 scheduler/tests/ upstream folders
+
+Described in chapter 24.2; the sub-folders (`test_worker`, `test_views`, `test_task_types`, `test_mgmt_commands`, `test_multiprocess`) mirror the packages they test.
+
+## 26. Repository-level files
+
+| File | What it is | Why it exists |
+| pyproject.toml | project metadata, dependencies, optional extras (`yaml`, `valkey`, and the new `desktop`), ruff and mypy settings | single modern place for Python packaging and tool config; `[dependency-groups]` lists dev tools |
+| uv.lock | exact versions of every dependency | reproducible installs |
+| .gitignore | files git must skip (venv, caches, build output, now `staticfiles/`, `*.spec`) | keeps generated files out of the history |
+| .pre-commit-config.yaml | hooks run before each commit: check-json/xml/yaml, end-of-file and whitespace fixers, codespell, ruff (lint and format), pyproject-fmt, and more | consistent code style without arguing about it |
+| CLAUDE.md | instructions for the Claude Code assistant (commands, architecture summary) | so an AI helper follows the project's conventions |
+| README.md, SECURITY.md, CODE_OF_CONDUCT.md, LICENSE | project description, how to report vulnerabilities, behaviour rules, MIT licence | standard open-source files |
+| mkdocs.yml, .readthedocs.yaml | documentation site configuration | builds `docs/` into a website |
+| docs/*.md (index, installation, configuration, usage, commands, drt-model, migrate_to_v3, changelog) | upstream documentation; `drt-model.md` describes worker flows; `migrate_to_v3.md` upgrade notes | user manual of the library |
+| docs/media/*.jpg (9 images) | screenshots of the admin pages used in the documentation | illustrations |
+| .github/workflows/test.yml | "Django CI": on push/PR runs tests across a matrix of Python version, Django version and broker | automatic testing |
+| .github/workflows/publish.yml | "Release": builds and publishes the package on a release | automatic release |
+| .github/workflows/publish-documentation.yml | builds and publishes the docs on a release or manually | docs site |
+| .github/workflows/test-workflow.yml | a manually triggered lint (ruff) workflow | on-demand check |
+| .github/actions/test-coverage/action.yml | a reusable action that runs tests with coverage and comments the result on a pull request | coverage reporting |
+| .github/zizmor.yml, dependabot.yml, release-drafter.yml | workflow security linting rules, automatic dependency update PRs, release-note drafting | repository hygiene |
+| .github/CONTRIBUTING.md, FUNDING.yml, ISSUE_TEMPLATE/*.md | contributor guide, sponsorship link, bug and feature request templates | community process |
+| .claude/settings.json and testproject/.claude/settings.json | Claude Code permission settings | assistant configuration |
+| manage_desktop.py | `manage.py` for the desktop settings | collectstatic for the build |
+| guide/ (build_guide.py, diagrams.py, chapters/*.txt) | this guide | documentation as code |
+
+!why: Notice that every file in the repository root has exactly one job. When you start your own project, create these early: a `.gitignore`, a `pyproject.toml` (or `requirements.txt`), a README and a lock file. They save more time than any feature.
+
+## 27. Glossary
+
+| Term | Meaning |
+| Request / Response | what the browser sends and what the server returns |
+| View | a Python function (or class) turning a request into a response |
+| URLconf | the table of URL patterns to views |
+| Model | a Python class that is a database table |
+| Migration | a recorded database change |
+| ORM | Object-Relational Mapper: Python objects instead of SQL |
+| QuerySet | a lazy, chainable database query |
+| Template | an HTML file with Django placeholders |
+| Context | the dictionary a view hands to a template |
+| Form / ModelForm | a validated input description, optionally generated from a model |
+| Middleware | code that wraps every request and response |
+| CSRF | forged cross-site requests; blocked with tokens |
+| Session | server-side memory about one browser, found through a cookie |
+| Static files | CSS, JavaScript and images |
+| WSGI | the interface between a web server and Django |
+| Idempotent | safe to run twice with the same result |
+| Daemon thread | a background thread that dies with the program |
+| Singleton | a table that holds exactly one row (AlarmSetting) |
+| Template vs occurrence | a reusable plan versus one dated instance (RecurringTask vs PersonalTask) |
+| Unmanaged model | a model with no table, used for admin pages |
+| Fixture / test database | throwaway data and database used during tests |
+| PyInstaller | tool that bundles a Python program into an .exe |
+| Tray icon | the small icon near the Windows clock that keeps the program alive |
